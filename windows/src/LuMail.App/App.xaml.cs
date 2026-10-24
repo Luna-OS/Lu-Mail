@@ -14,6 +14,12 @@ public partial class App : Application
     /// <summary>Auto-Updater.</summary>
     public static UpdateManager Updates { get; private set; } = null!;
 
+    /// <summary>Systemmitteilungen.</summary>
+    public static NotificationService Notifications { get; } = new();
+
+    /// <summary>App wurde über einen Klick auf eine Mitteilung gestartet (wird nach dem Laden geöffnet).</summary>
+    public static IDictionary<string, string>? PendingNotification { get; set; }
+
     public App()
     {
         // WebView2 legt sonst seinen Datenordner neben der .exe an (evtl. schreibgeschützt).
@@ -29,7 +35,23 @@ public partial class App : Application
     {
         Services = AppServices.Create();
         Updates = new UpdateManager(Services);
+        ThemeService.ApplyPalette(Services.Theme, Services.Settings);
+
+        // Mitteilungen registrieren, bevor die Aktivierungsart geprüft wird.
+        Notifications.Register();
+        try
+        {
+            var activation = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
+            if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.AppNotification
+                && activation.Data is Microsoft.Windows.AppNotifications.AppNotificationActivatedEventArgs notification)
+                PendingNotification = notification.Arguments;
+        }
+        catch (Exception)
+        {
+        }
+
         _window = new MainWindow();
+        Notifications.Activated += (_, args) => _window.DispatcherQueue.TryEnqueue(() => _window.OpenFromNotification(args));
         _window.Activate();
     }
 

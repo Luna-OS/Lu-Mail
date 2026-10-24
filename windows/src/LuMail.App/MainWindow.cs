@@ -1,3 +1,4 @@
+using LuMail.App.Services;
 using LuMail.App.Views;
 using Microsoft.UI;
 using Microsoft.UI.Composition.SystemBackdrops;
@@ -11,6 +12,8 @@ namespace LuMail.App;
 public sealed class MainWindow : Window
 {
     private readonly MainPage _page;
+
+    private TrayService? _tray;
 
     public MainWindow()
     {
@@ -38,8 +41,38 @@ public sealed class MainWindow : Window
         AppWindow.Resize(new SizeInt32 { Width = 1360, Height = 860 });
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "LuMail.ico"));
 
-        // Geladenes Update beim Beenden still installieren (ohne Neustart).
-        Closed += (_, _) => App.Updates?.InstallOnExitIfReady();
+        ThemeService.ApplyMode(this, App.Services.Settings);
+
+        // Infobereich + Taskleisten-Zähler
+        _tray = new TrayService(WinRT.Interop.WindowNative.GetWindowHandle(this),
+            openApp: () => DispatcherQueue.TryEnqueue(BringToFront),
+            openMessage: item => DispatcherQueue.TryEnqueue(() => { BringToFront(); _ = _page.OpenItemAsync(item); }));
+        _page.Tray = _tray;
+
+        Activated += (_, args) => _page.OnWindowActivationChanged(args.WindowActivationState != WindowActivationState.Deactivated);
+
+        Closed += (_, _) =>
+        {
+            // Geladenes Update beim Beenden still installieren (ohne Neustart).
+            App.Updates?.InstallOnExitIfReady();
+            _ = _page.Vm.StopBackgroundAsync();
+            _tray?.Dispose();
+            App.Notifications.Unregister();
+        };
+    }
+
+    private void BringToFront()
+    {
+        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter
+            && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)
+            presenter.Restore();
+        Activate();
+    }
+
+    public void OpenFromNotification(IDictionary<string, string> args)
+    {
+        BringToFront();
+        _page.OpenFromNotification(args);
     }
 
     public void ShowError(string message) => _page.ShowMessage(message, isError: true);
