@@ -53,10 +53,21 @@ public struct OAuthClientCredentials: Codable, Sendable, Equatable {
         self.clientSecret = clientSecret
     }
 
+    /// Nutzer-`oauth.json`, ergänzt um die eingebauten Client-IDs (docs/FUNKTIONEN.md §18).
+    public static func resolve(userFile url: URL, builtIn: String = BuiltInOAuth.json) -> [String: OAuthClientCredentials] {
+        var result = parse(Data(builtIn.utf8))
+        for (key, value) in load(from: url) { result[key] = value }
+        return result
+    }
+
     /// Liest `oauth.json`; Einträge ohne Client-ID werden ignoriert.
     public static func load(from url: URL) -> [String: OAuthClientCredentials] {
-        guard let data = try? Data(contentsOf: url),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        guard let data = try? Data(contentsOf: url) else { return [:] }
+        return parse(data)
+    }
+
+    static func parse(_ data: Data) -> [String: OAuthClientCredentials] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         var result: [String: OAuthClientCredentials] = [:]
         for (key, value) in object {
             guard let entry = value as? [String: Any], let clientId = entry["clientId"] as? String,

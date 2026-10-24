@@ -554,3 +554,135 @@ public class ConversationHtmlTests
         Assert.DoesNotContain("<title>", html);
     }
 }
+
+public class DiscoveryTests
+{
+    private static readonly ProviderCatalog Catalog = ProviderCatalog.LoadEmbedded();
+
+    private sealed class Router : HttpMessageHandler
+    {
+        public Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> Routes { get; } = new();
+        public List<HttpRequestMessage> Requests { get; } = new();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests.Add(request);
+            var url = request.RequestUri!.AbsoluteUri;
+            var route = Routes.FirstOrDefault(r => url.StartsWith(r.Key, StringComparison.Ordinal));
+            return Task.FromResult(route.Value?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private static HttpResponseMessage Mx(params string[] data) =>
+        AuthTests.Json(HttpStatusCode.OK, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Status = 0,
+            Answer = data.Select(d => new { name = "x", type = 15, TTL = 300, data = d }),
+        }));
+
+    [Fact]
+    public async Task KnownDomain_NoNetwork()
+    {
+        var router = new Router();
+        var result = await new ProviderDiscovery(Catalog, new HttpClient(router)).DiscoverAsync("max@web.de");
+        Assert.Equal(("webde", "domain"), (result.Provider.Id, result.Source));
+        Assert.Empty(router.Requests);
+    }
+
+    [Fact]
+    public async Task GoogleWorkspaceMx_IsGmail_WithDnsJsonAccept()
+    {
+        var router = new Router();
+        router.Routes["https://cloudflare-dns.com/dns-query?name=firma.de"] = _ => Mx("20 alt1.aspmx.l.google.com.", "10 aspmx.l.google.com.");
+        var result = await new ProviderDiscovery(Catalog, new HttpClient(router)).DiscoverAsync("max@firma.de");
+        Assert.Equal(("gmail", "mx"), (result.Provider.Id, result.Source));
+        Assert.Contains(router.Requests[0].Headers.Accept, a => a.MediaType == "application/dns-json");
+        Assert.Contains("type=MX", router.Requests[0].RequestUri!.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task HostingerMx_IsHostinger()
+    {
+        var router = new Router();
+        router.Routes["https://cloudflare-dns.com/"] = _ => Mx("5 mx1.hostinger.com.", "10 mx2.hostinger.com.");
+        var result = await new ProviderDiscovery(Catalog, new HttpClient(router)).DiscoverAsync("info@meinshop.de");
+        Assert.Equal("hostinger", result.Provider.Id);
+    }
+
+    [Fact]
+    public async Task Autoconfig_PrefillsCustomServers_IgnoresPlain()
+    {
+        const string xml = """
+            <?xml version="1.0"?>
+            <clientConfig version="1.1"><emailProvider id="verein.de">
+              <incomingServer type="pop3"><hostname>pop.verein.de</hostname><port>995</port><socketType>SSL</socketType></incomingServer>
+              <incomingServer type="imap"><hostname>imap.%EMAILDOMAIN%</hostname><port>143</port><socketType>plain</socketType></incomingServer>
+              <incomingServer type="imap"><hostname>imap.%EMAILDOMAIN%</hostname><port>993</port><socketType>SSL</socketType></incomingServer>
+              <outgoingServer type="smtp"><hostname>smtp.verein.de</hostname><port>587</port><socketType>STARTTLS</socketType></outgoingServer>
+            </emailProvider></clientConfig>
+            """;
+        var router = new Router();
+        router.Routes["https://cloudflare-dns.com/"] = _ => Mx("10 mail.verein.de.");
+        router.Routes["https://autoconfig.verein.de/mail/config-v1.1.xml?emailaddress=anna%40verein.de"] =
+            _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(xml) };
+        var result = await new ProviderDiscovery(Catalog, new HttpClient(router)).DiscoverAsync("anna@verein.de");
+        Assert.Equal(("custom", "autoconfig"), (result.Provider.Id, result.Source));
+        Assert.Equal(("imap.verein.de", 993, "tls"), (result.Servers!.Imap.Host, result.Servers.Imap.Port, result.Servers.Imap.Security));
+        Assert.Equal(("smtp.verein.de", 587, "starttls"), (result.Servers.Smtp.Host, result.Servers.Smtp.Port, result.Servers.Smtp.Security));
+    }
+
+    [Fact]
+    public async Task Nothing_IsCustomWithoutServers()
+    {
+        var router = new Router(); // alles 404
+        var result = await new ProviderDiscovery(Catalog, new HttpClient(router)).DiscoverAsync("x@unbekannt-xyz.de");
+        Assert.Equal(("custom", "none"), (result.Provider.Id, result.Source));
+        Assert.Null(result.Servers);
+        Assert.All(router.Requests.Skip(1), r => Assert.Equal("https", r.RequestUri!.Scheme));
+    }
+
+    [Fact]
+    public void MxParsing_SortsByPriority() =>
+        Assert.Equal(new[] { "a.example.com", "b.example.com" },
+            ProviderDiscovery.ParseMx("""{"Answer":[{"data":"20 b.example.com."},{"data":"10 a.example.com."}]}"""));
+
+    [Fact]
+    public async Task LocalPortCheck_DetectsListener()
+    {
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        Assert.True(await LocalPortCheck.IsOpenAsync(port));
+        listener.Stop();
+        Assert.False(await LocalPortCheck.IsOpenAsync(port));
+    }
+
+    [Fact]
+    public void ProviderSetupFieldsAreLoaded()
+    {
+        var gmail = Catalog.Get("gmail");
+        Assert.Contains("google.com", gmail.MxSuffixes);
+        Assert.NotEmpty(gmail.Setup.PasswordSteps);
+        Assert.NotEmpty(gmail.Setup.OAuthSteps);
+        Assert.Contains(gmail.Setup.PasswordSteps, s => s.Url is not null && s.Button is not null);
+        Assert.Equal(1143, Catalog.Get("proton").Setup.CheckLocalPort);
+        Assert.Null(Catalog.Get("gmx").Setup.CheckLocalPort);
+        Assert.Equal(6, Catalog.Discovery.TimeoutSeconds);
+        Assert.Equal(3, Catalog.Discovery.Autoconfig.Count);
+    }
+
+    [Fact]
+    public void OAuth_UserConfigBeforeBuiltIn()
+    {
+        var builtIn = LuMail.Core.Auth.OAuthClientConfig.Parse("""{"gmail":{"clientId":"builtin-g","clientSecret":"s"},"outlook":{"clientId":"builtin-ms"}}""");
+        var user = LuMail.Core.Auth.OAuthClientConfig.Parse("""{"gmail":{"clientId":"mine"},"mailru":{"clientId":""}}""");
+        var merged = user.WithFallback(builtIn);
+        Assert.True(merged.TryGet("gmail", out var g));
+        Assert.Equal("mine", g.ClientId);
+        Assert.True(merged.TryGet("outlook", out var o));
+        Assert.Equal("builtin-ms", o.ClientId);
+        Assert.False(merged.TryGet("mailru", out _));
+        Assert.NotNull(LuMail.Core.Auth.OAuthClientConfig.BuiltIn); // eingebettete Ressource lesbar (im Repo "{}")
+        Assert.Contains("LuMail.BuiltInOAuth.json", typeof(LuMail.Core.Auth.OAuthClientConfig).Assembly.GetManifestResourceNames());
+    }
+}

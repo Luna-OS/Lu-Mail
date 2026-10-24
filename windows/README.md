@@ -83,6 +83,14 @@ HTTP-Server nur auf `127.0.0.1`/`::1` (zufälliger Port, 10 Minuten gültig) und
   Hostinger (Postfach-Passwort) sowie Gmail/Mail.ru mit App-Passwort. Die Zugangsdaten werden sofort per
   IMAP geprüft; bei einem Fehler erscheint die Seite erneut mit Fehlermeldung.
 
+Der Assistent fragt zuerst nach der E-Mail-Adresse und erkennt den Anbieter selbst (bekannte Domains,
+MX-Einträge per DNS-over-HTTPS, Thunderbird-Autoconfig); danach zeigt er die nötigen Schritte („So geht's“).
+
+### Eingebaute OAuth-Client-IDs
+
+Release-Builds enthalten Client-IDs für Google, Microsoft und Mail.ru (`src/LuMail.Core/BuiltInOAuth.json`, von der CI
+aus GitHub-Secrets gefüllt; im Repository steht nur `{}`). Ein Eintrag in der eigenen `oauth.json` hat Vorrang.
+
 ### Eigene OAuth-Client-IDs (optional)
 
 `shared/oauth.example.json` nach `%APPDATA%\LuMail\oauth.json` kopieren und die eigenen Client-Daten

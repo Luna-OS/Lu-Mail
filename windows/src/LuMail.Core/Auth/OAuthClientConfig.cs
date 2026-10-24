@@ -68,6 +68,37 @@ public sealed class OAuthClientConfig
         return null;
     }
 
+    /// <summary>Eingebaute Client-IDs (<c>BuiltInOAuth.json</c>, von der CI aus Secrets gefüllt; im Repository <c>{}</c>).</summary>
+    public static OAuthClientConfig BuiltIn { get; } = LoadBuiltIn();
+
+    private static OAuthClientConfig LoadBuiltIn()
+    {
+        try
+        {
+            using var stream = typeof(OAuthClientConfig).Assembly.GetManifestResourceStream("LuMail.BuiltInOAuth.json");
+            if (stream is null) return Empty;
+            using var reader = new StreamReader(stream);
+            return Parse(reader.ReadToEnd());
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            return Empty;
+        }
+    }
+
+    /// <summary>
+    /// Reihenfolge nach FUNKTIONEN §18: Eintrag dieser Konfiguration (Nutzer-oauth.json) → Eintrag aus <paramref name="fallback"/>.
+    /// </summary>
+    public OAuthClientConfig WithFallback(OAuthClientConfig fallback)
+    {
+        var merged = new Dictionary<string, OAuthClientCredentials>(fallback._clients, StringComparer.OrdinalIgnoreCase);
+        foreach (var (id, c) in _clients) merged[id] = c;
+        return new OAuthClientConfig(merged);
+    }
+
+    /// <summary>Nutzer-oauth.json mit eingebauten Client-IDs als Rückfall.</summary>
+    public static OAuthClientConfig LoadWithBuiltIn(string userPath) => Load(userPath).WithFallback(BuiltIn);
+
     public bool TryGet(string providerId, out OAuthClientCredentials credentials)
     {
         if (_clients.TryGetValue(providerId, out var c) && c.IsConfigured)

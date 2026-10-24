@@ -63,6 +63,10 @@ jobs:
           done
       - name: SharedResources.swift aktuell?
         run: python3 scripts/sync-shared.py --check
+      - name: Keine Client-IDs im Repository
+        run: |
+          test "$(tr -d '[:space:]' < windows/src/LuMail.Core/BuiltInOAuth.json)" = "{}"
+          grep -q '^{}$' macos/Sources/LuMailCore/Generated/BuiltInOAuth.swift
 
   core-linux:
     name: LuMailCore-Tests (Linux)
@@ -83,6 +87,14 @@ jobs:
       - run: swift --version
       - name: Tests
         run: swift test --package-path macos
+      - name: OAuth-Client-IDs einbauen (aus Secrets)
+        run: python3 scripts/write-builtin-oauth.py
+        env:
+          LUMAIL_GOOGLE_CLIENT_ID: ${{ secrets.LUMAIL_GOOGLE_CLIENT_ID }}
+          LUMAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.LUMAIL_GOOGLE_CLIENT_SECRET }}
+          LUMAIL_MICROSOFT_CLIENT_ID: ${{ secrets.LUMAIL_MICROSOFT_CLIENT_ID }}
+          LUMAIL_MAILRU_CLIENT_ID: ${{ secrets.LUMAIL_MAILRU_CLIENT_ID }}
+          LUMAIL_MAILRU_CLIENT_SECRET: ${{ secrets.LUMAIL_MAILRU_CLIENT_SECRET }}
       - name: Lu-Mail.app bauen
         run: macos/scripts/build-app.sh
       - name: Disk-Image erstellen
@@ -117,6 +129,14 @@ jobs:
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
             choco install innosetup -y --no-progress
           }
+      - name: OAuth-Client-IDs einbauen (aus Secrets)
+        run: python scripts/write-builtin-oauth.py
+        env:
+          LUMAIL_GOOGLE_CLIENT_ID: ${{ secrets.LUMAIL_GOOGLE_CLIENT_ID }}
+          LUMAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.LUMAIL_GOOGLE_CLIENT_SECRET }}
+          LUMAIL_MICROSOFT_CLIENT_ID: ${{ secrets.LUMAIL_MICROSOFT_CLIENT_ID }}
+          LUMAIL_MAILRU_CLIENT_ID: ${{ secrets.LUMAIL_MAILRU_CLIENT_ID }}
+          LUMAIL_MAILRU_CLIENT_SECRET: ${{ secrets.LUMAIL_MAILRU_CLIENT_SECRET }}
       - name: App und Installer bauen
         shell: pwsh
         run: windows/installer/build-installer.ps1 -Arch ${{ matrix.arch }} -Version $env:VERSION

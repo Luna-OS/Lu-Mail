@@ -5,61 +5,86 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:vm="using:LuMail.App.ViewModels"
     mc:Ignorable="d"
     Title="Konto hinzufügen"
+    PrimaryButtonText="Weiter"
     CloseButtonText="Abbrechen"
-    DefaultButton="None"
+    DefaultButton="Primary"
+    PrimaryButtonClick="OnPrimaryButtonClick"
+    SecondaryButtonClick="OnSecondaryButtonClick"
     Style="{StaticResource DefaultContentDialogStyle}">
 
-    <ContentDialog.Resources>
-        <DataTemplate x:Key="ProviderTileTemplate" x:DataType="vm:ProviderTile">
-            <Grid Width="200" Height="96" Padding="14,12,14,12" Background="{x:Bind Brush}" CornerRadius="{StaticResource LuRadiusMedium}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Border Width="32" Height="32" HorizontalAlignment="Left" VerticalAlignment="Top"
-                        Background="#33FFFFFF" CornerRadius="16">
-                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" FontWeight="Bold"
-                               Foreground="White" Text="{x:Bind Initial}" />
-                </Border>
-                <StackPanel Grid.Row="1" Spacing="0">
-                    <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="White" Text="{x:Bind Name}" />
-                    <TextBlock FontSize="11" Foreground="#DDFFFFFF" Text="{x:Bind MethodText}" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-    </ContentDialog.Resources>
-
-    <Grid MinWidth="440" MaxWidth="460">
-        <!-- Auswahl -->
-        <StackPanel x:Name="ChoosePanel" Spacing="12">
-            <TextBlock Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
-                       Text="Wähle deinen Anbieter. Die Anmeldung erfolgt immer in deinem Standardbrowser – Lu-Mail sieht dein Passwort nur, wenn der Anbieter kein OAuth anbietet." />
-            <GridView x:Name="ProviderGrid" IsItemClickEnabled="False" ItemTemplate="{StaticResource ProviderTileTemplate}"
-                      SelectionChanged="OnProviderSelectionChanged" SelectionMode="Single" />
-            <TextBox x:Name="EmailBox" Header="E-Mail-Adresse (optional)" InputScope="EmailSmtpAddress"
+    <Grid Width="480">
+        <!-- ===== Schritt 1: E-Mail-Adresse oder Anbieter ===== -->
+        <StackPanel x:Name="Step1Panel" Spacing="8">
+            <TextBlock FontSize="16" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Wie lautet deine E-Mail-Adresse?" />
+            <TextBox x:Name="EmailBox" FontSize="16" InputScope="EmailSmtpAddress" KeyDown="OnEmailKeyDown"
                      PlaceholderText="name@beispiel.de" TextChanged="OnEmailChanged" />
-            <InfoBar x:Name="HintBar" IsClosable="False" IsOpen="False" Severity="Informational" />
-            <InfoBar x:Name="ErrorBar" IsClosable="True" IsOpen="False" Severity="Error" Title="Anmeldung fehlgeschlagen" />
-            <Button x:Name="LoginButton" HorizontalAlignment="Stretch" Click="OnLoginClick" IsEnabled="False"
-                    Style="{StaticResource AccentButtonStyle}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="14" Glyph="&#xE774;" />
-                    <TextBlock Text="Im Browser anmelden" />
-                </StackPanel>
-            </Button>
+            <StackPanel x:Name="DiscoveringPanel" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                <ProgressRing Width="16" Height="16" IsActive="True" />
+                <TextBlock x:Name="DiscoveringText" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" />
+            </StackPanel>
+            <TextBlock Margin="0,8,0,0" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" Text="Oder Anbieter direkt wählen:" />
+            <Grid x:Name="ProviderGrid" ColumnSpacing="8" RowSpacing="8" />
         </StackPanel>
 
-        <!-- Warten auf den Browser -->
+        <!-- ===== Schritt 2: Anbieter-Seite ===== -->
+        <Grid x:Name="Step2Panel" RowSpacing="10" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="ProviderBadge" Width="40" Height="40" CornerRadius="20">
+                    <TextBlock x:Name="ProviderInitial" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="18" FontWeight="Bold" Foreground="White" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="ProviderNameText" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" />
+                    <TextBlock x:Name="ProviderEmailText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Grid>
+            <StackPanel Grid.Row="1" Spacing="6">
+                <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="So geht's" />
+                <ScrollViewer MaxHeight="230" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="StepsPanel" Padding="0,0,8,0" Spacing="10" />
+                </ScrollViewer>
+            </StackPanel>
+            <Grid x:Name="BridgePanel" Grid.Row="2" Padding="10,6,6,6" Background="{ThemeResource LuSurfaceHover}"
+                  CornerRadius="{StaticResource LuRadiusSmall}" ColumnSpacing="8" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="BridgeText" VerticalAlignment="Center" FontSize="13" TextWrapping="Wrap" />
+                <HyperlinkButton Grid.Column="1" Click="OnRecheckBridgeClick" Content="Erneut prüfen" />
+            </Grid>
+            <TextBlock x:Name="ServersText" Grid.Row="3" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" Visibility="Collapsed" />
+            <InfoBar x:Name="HintBar" Grid.Row="4" IsClosable="False" IsOpen="False" Severity="Informational" />
+        </Grid>
+
+        <!-- ===== Warten auf den Browser ===== -->
         <StackPanel x:Name="WaitingPanel" Margin="0,24,0,24" HorizontalAlignment="Center" Spacing="14" Visibility="Collapsed">
             <ProgressRing Width="48" Height="48" HorizontalAlignment="Center" IsActive="True" />
             <TextBlock HorizontalAlignment="Center" FontSize="16" FontWeight="SemiBold"
-                       Foreground="{ThemeResource LuTextPrimary}" Text="Bitte im Browser fortfahren…" />
-            <TextBlock x:Name="WaitingDetail" MaxWidth="380" HorizontalAlignment="Center"
+                       Foreground="{ThemeResource LuTextPrimary}" Text="Bitte im Browser fortfahren …" />
+            <TextBlock x:Name="WaitingDetail" MaxWidth="400" HorizontalAlignment="Center"
                        Foreground="{ThemeResource LuTextSecondary}" TextAlignment="Center" TextWrapping="Wrap" />
             <Button HorizontalAlignment="Center" Click="OnCancelWaitingClick" Content="Abbrechen" />
+        </StackPanel>
+
+        <!-- ===== Erfolg ===== -->
+        <StackPanel x:Name="SuccessPanel" Margin="0,32,0,32" HorizontalAlignment="Center" Spacing="12" Visibility="Collapsed">
+            <FontIcon HorizontalAlignment="Center" FontSize="48" Foreground="{ThemeResource LuSuccess}" Glyph="&#xE73E;" />
+            <TextBlock x:Name="SuccessText" MaxWidth="420" HorizontalAlignment="Center" FontSize="16" FontWeight="SemiBold"
+                       Foreground="{ThemeResource LuTextPrimary}" TextAlignment="Center" TextWrapping="Wrap" />
         </StackPanel>
     </Grid>
 </ContentDialog>

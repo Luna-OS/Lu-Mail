@@ -32,7 +32,9 @@ public sealed class AccountSetupService
     /// <summary>True, wenn für diesen Anbieter OAuth verwendet wird.</summary>
     public bool CanUseOAuth(Provider provider) => provider.SupportsOAuth && _oauthConfig().TryGet(provider.Id, out _);
 
-    public async Task<Account> AddAccountAsync(Provider provider, string? emailHint, CancellationToken ct = default)
+    /// <param name="servers">„Andere (IMAP)“: erkannte Server zum Vorausfüllen der Anmeldeseite.</param>
+    public async Task<Account> AddAccountAsync(Provider provider, string? emailHint, CancellationToken ct = default,
+        CustomServerSettings? servers = null)
     {
         var hint = string.IsNullOrWhiteSpace(emailHint) ? null : emailHint.Trim();
 
@@ -56,7 +58,7 @@ public sealed class AccountSetupService
                 : $"{provider.Name} unterstützt keine Anmeldeart.");
 
         var password = await _login.LoginWithPasswordAsync(provider, hint,
-            (email, pw, servers, token) => _mail.VerifyPasswordAsync(provider, email, pw, servers, token), ct).ConfigureAwait(false);
+            (email, pw, entered, token) => _mail.VerifyPasswordAsync(provider, email, pw, entered, token), ct, servers).ConfigureAwait(false);
 
         var pwAccount = FindOrCreate(provider, password.Email, null, Account.AuthPassword);
         if (provider.CustomServers) pwAccount.CustomServers = password.Servers;

@@ -188,9 +188,9 @@ final class AppModel {
     }
 
     /// Startet die Browser-Anmeldung und fügt das Konto hinzu.
-    func addAccount(provider: Provider, emailHint: String?) async throws {
+    func addAccount(provider: Provider, emailHint: String?, serversHint: CustomServers? = nil) async throws {
         let hint = emailHint?.trimmingCharacters(in: .whitespaces)
-        var account = try await auth.signIn(provider: provider, emailHint: hint?.isEmpty == true ? nil : hint)
+        var account = try await auth.signIn(provider: provider, emailHint: hint?.isEmpty == true ? nil : hint, serversHint: serversHint)
         if let existing = accounts.first(where: { $0.email.caseInsensitiveCompare(account.email) == .orderedSame && $0.providerId == account.providerId }) {
             // Erneute Anmeldung: altes Konto ersetzen (z. B. abgelaufenes Token), Signatur behalten.
             account.signature = existing.signature
@@ -827,6 +827,11 @@ final class AppModel {
     // MARK: Verfassen
 
     func newMessage(to recipient: String = "") {
+        guard !accounts.isEmpty else {
+            // Ohne Konto zuerst eins hinzufügen (docs/FUNKTIONEN.md §19).
+            showAddAccount = true
+            return
+        }
         let accountId = selection?.accountId ?? accounts.first?.id
         let signature = accountId.flatMap { account(id: $0)?.signature }
         composeDraft = ComposeDraft(accountId: accountId, to: recipient, body: MessageBuilder.bodyWithSignature("", signature: signature))

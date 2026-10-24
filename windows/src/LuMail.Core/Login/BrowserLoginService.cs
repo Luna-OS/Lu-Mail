@@ -136,7 +136,7 @@ public sealed class BrowserLoginService
     /// Die Zugangsdaten werden sofort mit <paramref name="verify"/> geprüft; bei Fehler erscheint das Formular erneut mit {{ERROR}}.
     /// </summary>
     public async Task<PasswordLoginResult> LoginWithPasswordAsync(Provider provider, string? emailHint,
-        CredentialVerifier verify, CancellationToken ct = default)
+        CredentialVerifier verify, CancellationToken ct = default, CustomServerSettings? initialServers = null)
     {
         var state = Pkce.CreateState();
         var stateUsed = 0;
@@ -152,7 +152,7 @@ public sealed class BrowserLoginService
                 if (!StateEquals(pathState, state) || Volatile.Read(ref stateUsed) == 1)
                     return Done(404, "Link ungültig",
                         "Dieser Anmelde-Link ist ungültig oder abgelaufen. Bitte starte die Anmeldung in Lu-Mail erneut.");
-                return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, emailHint, null, servers: null));
+                return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, emailHint, null, servers: initialServers));
             }
 
             if (request.Path == "/login")

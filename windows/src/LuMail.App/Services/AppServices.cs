@@ -52,6 +52,7 @@ public sealed class AppServices
         Mail = new MailService(Providers, Categories, new StoredCredentialSource(Secrets, Tokens), Rules);
         Login = new BrowserLoginService(OpenInBrowser, oauth);
         Setup = new AccountSetupService(Login, Mail, Accounts, Secrets, Tokens, LoadOAuthConfig);
+        Discovery = new ProviderDiscovery(Providers, http);
         Contacts = new ContactStore(paths.ContactsFile);
         Snoozes = new SnoozeStore(paths.SnoozedFile);
         Outbox = new OutboxStore(paths.OutboxDirectory);
@@ -67,7 +68,11 @@ public sealed class AppServices
     public static AppServices Create() => new(AppPaths.Default().EnsureCreated());
 
     /// <summary>oauth.json wird bei jedem Zugriff neu gelesen (Änderungen ohne Neustart).</summary>
-    public OAuthClientConfig LoadOAuthConfig() => OAuthClientConfig.Load(Paths.OAuthFile);
+    /// <summary>Nutzer-oauth.json, danach eingebaute Client-IDs (FUNKTIONEN §18).</summary>
+    public OAuthClientConfig LoadOAuthConfig() => OAuthClientConfig.LoadWithBuiltIn(Paths.OAuthFile);
+
+    /// <summary>Anbieter-Erkennung für den Assistenten „Konto hinzufügen“.</summary>
+    public ProviderDiscovery Discovery { get; private set; } = null!;
 
     public void SaveSettings() => Settings.Save(Paths.SettingsFile);
 

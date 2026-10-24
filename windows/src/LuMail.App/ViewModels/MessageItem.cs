@@ -139,22 +139,3 @@ public sealed class MessageItem : ObservableObject
     private static bool Contains(string? text, string query) =>
         !string.IsNullOrEmpty(text) && text.Contains(query.Trim(), StringComparison.CurrentCultureIgnoreCase);
 }
-
-/// <summary>Kachel im Dialog „Konto hinzufügen“.</summary>
-public sealed class ProviderTile
-{
-    public ProviderTile(Provider provider, bool oauthAvailable)
-    {
-        Provider = provider;
-        OAuthAvailable = oauthAvailable;
-    }
-
-    public Provider Provider { get; }
-    public bool OAuthAvailable { get; }
-    public string Name => Provider.Name;
-    public SolidColorBrush Brush => BrushCache.ForProvider(Provider);
-    public string Initial => Provider.Name.Length > 0 ? Provider.Name[..1] : "?";
-    public string MethodText => OAuthAvailable ? "Anmeldung über OAuth"
-        : Provider.SupportsPassword ? Provider.PasswordLabel
-        : "OAuth-Client-ID nötig";
-}

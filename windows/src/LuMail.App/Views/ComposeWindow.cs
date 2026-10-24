@@ -23,7 +23,7 @@ public sealed class ComposeWindow : Window
         AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
         AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
         if (MicaController.IsSupported()) SystemBackdrop = new MicaBackdrop();
-        AppWindow.Resize(new SizeInt32 { Width = 760, Height = 680 });
+        Services.WindowSizing.ResizeAndCenter(this, 760, 680);
 
         _page.Sent += (_, _) => Close();
         _page.SubjectChanged += (_, subject) => Title = $"{subject} – Lu-Mail";
