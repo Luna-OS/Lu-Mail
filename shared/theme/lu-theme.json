@@ -1,0 +1,76 @@
+{
+  "name": "Luna",
+  "version": 1,
+  "description": "Lu-Mail Design-Tokens. Gemeinsame Quelle für macOS (SwiftUI) und Windows (WinUI 3).",
+  "colors": {
+    "dark": {
+      "background": "#0F1020",
+      "sidebar": "#131430",
+      "surface": "#1A1C3A",
+      "surfaceHover": "#232547",
+      "surfaceSelected": "#2D2A5C",
+      "border": "#2A2C4F",
+      "textPrimary": "#ECEBFF",
+      "textSecondary": "#A6A3C9",
+      "textMuted": "#6F6C99",
+      "accent": "#8B7CFF",
+      "accentHover": "#A094FF",
+      "accentText": "#0F1020",
+      "moon": "#F5D06F",
+      "unreadDot": "#8B7CFF",
+      "danger": "#FF6B81",
+      "success": "#4ADE80"
+    },
+    "light": {
+      "background": "#F7F6FF",
+      "sidebar": "#EEECFB",
+      "surface": "#FFFFFF",
+      "surfaceHover": "#F1EFFE",
+      "surfaceSelected": "#E3DFFD",
+      "border": "#DDDAF2",
+      "textPrimary": "#1B1A33",
+      "textSecondary": "#5E5B80",
+      "textMuted": "#9491B5",
+      "accent": "#6B5BEF",
+      "accentHover": "#5A49E0",
+      "accentText": "#FFFFFF",
+      "moon": "#C99A1E",
+      "unreadDot": "#6B5BEF",
+      "danger": "#E11D48",
+      "success": "#16A34A"
+    }
+  },
+  "providers": {
+    "gmail": "#EA4335",
+    "proton": "#6D4AFF",
+    "mailru": "#005FF9",
+    "hostinger": "#673DE6"
+  },
+  "categories": {
+    "primary": "#8B7CFF",
+    "promotions": "#F59E0B",
+    "social": "#3B82F6",
+    "updates": "#10B981",
+    "forums": "#A855F7"
+  },
+  "radius": {
+    "small": 6,
+    "medium": 10,
+    "large": 16
+  },
+  "spacing": {
+    "xs": 4,
+    "s": 8,
+    "m": 12,
+    "l": 16,
+    "xl": 24
+  },
+  "typography": {
+    "fontMac": "SF Pro",
+    "fontWindows": "Segoe UI Variable",
+    "sizeCaption": 11,
+    "sizeBody": 13,
+    "sizeSubtitle": 15,
+    "sizeTitle": 20
+  }
+}

@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared:
+    name: Gemeinsame Dateien
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JSON prüfen
+        run: for f in shared/*.json shared/theme/*.json; do python3 -m json.tool "$f" > /dev/null && echo "ok: $f"; done
+      - name: SharedResources.swift aktuell?
+        run: python3 scripts/sync-shared.py --check
+
+  core-linux:
+    name: LuMailCore-Tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path macos
+
+  macos:
+    name: macOS-App
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Tests
+        run: swift test --package-path macos
+      - name: Lu-Mail.app bauen
+        run: macos/scripts/build-app.sh
+      - name: App packen
+        run: ditto -c -k --keepParent macos/build/Lu-Mail.app Lu-Mail-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lu-Mail-macOS
+          path: Lu-Mail-macOS.zip
+
+  windows:
+    name: Windows-App
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Tests
+        run: dotnet test windows/tests/LuMail.Core.Tests -c Release
+      - name: App bauen (x64)
+        run: dotnet build windows/src/LuMail.App/LuMail.App.csproj -c Release -p:Platform=x64
+      - name: App veröffentlichen (x64)
+        run: dotnet publish windows/src/LuMail.App/LuMail.App.csproj -c Release -p:Platform=x64 -r win-x64 -o publish/LuMail-win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lu-Mail-Windows-x64
+          path: publish/LuMail-win-x64

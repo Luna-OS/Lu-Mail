@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "gmail",
+      "name": "Gmail",
+      "color": "#EA4335",
+      "domains": [
+        "gmail.com",
+        "googlemail.com"
+      ],
+      "imap": {
+        "host": "imap.gmail.com",
+        "port": 993,
+        "security": "tls"
+      },
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "security": "tls"
+      },
+      "authMethods": [
+        "oauth2",
+        "password"
+      ],
+      "oauth": {
+        "authorizationEndpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+        "tokenEndpoint": "https://oauth2.googleapis.com/token",
+        "scopes": [
+          "https://mail.google.com/",
+          "openid",
+          "email"
+        ],
+        "redirectUriTemplate": "http://127.0.0.1:{port}/callback",
+        "extraParams": {
+          "access_type": "offline",
+          "prompt": "consent"
+        },
+        "emailSource": "idToken",
+        "appRegistrationUrl": "https://console.cloud.google.com/apis/credentials"
+      },
+      "serverCategories": "gmail",
+      "passwordLabel": "App-Passwort",
+      "passwordHelp": "Gmail erlaubt normale Passwörter nicht für E-Mail-Programme. Erstelle unter „App-Passwörter“ ein eigenes Passwort (2-Schritt-Bestätigung muss aktiv sein).",
+      "helpUrl": "https://myaccount.google.com/apppasswords",
+      "allowInsecureLoopbackCertificate": false,
+      "saveSentViaImap": false
+    },
+    {
+      "id": "proton",
+      "name": "Proton Mail",
+      "color": "#6D4AFF",
+      "domains": [
+        "proton.me",
+        "protonmail.com",
+        "protonmail.ch",
+        "pm.me"
+      ],
+      "imap": {
+        "host": "127.0.0.1",
+        "port": 1143,
+        "security": "tls"
+      },
+      "smtp": {
+        "host": "127.0.0.1",
+        "port": 1025,
+        "security": "tls"
+      },
+      "authMethods": [
+        "password"
+      ],
+      "serverCategories": "none",
+      "passwordLabel": "Bridge-Passwort",
+      "passwordHelp": "Proton Mail ist Ende-zu-Ende-verschlüsselt und funktioniert in E-Mail-Programmen nur über die Proton Mail Bridge (kostenpflichtiger Tarif). Installiere die Bridge, melde dich dort an, stelle unter Einstellungen → Erweitert → Verbindungsmodus IMAP und SMTP auf „SSL“ und kopiere das angezeigte Bridge-Passwort.",
+      "helpUrl": "https://proton.me/mail/bridge",
+      "allowInsecureLoopbackCertificate": true,
+      "saveSentViaImap": false
+    },
+    {
+      "id": "mailru",
+      "name": "Mail.ru",
+      "color": "#005FF9",
+      "domains": [
+        "mail.ru",
+        "inbox.ru",
+        "list.ru",
+        "bk.ru",
+        "internet.ru",
+        "xmail.ru"
+      ],
+      "imap": {
+        "host": "imap.mail.ru",
+        "port": 993,
+        "security": "tls"
+      },
+      "smtp": {
+        "host": "smtp.mail.ru",
+        "port": 465,
+        "security": "tls"
+      },
+      "authMethods": [
+        "oauth2",
+        "password"
+      ],
+      "oauth": {
+        "authorizationEndpoint": "https://o2.mail.ru/login",
+        "tokenEndpoint": "https://o2.mail.ru/token",
+        "userInfoEndpoint": "https://oauth.mail.ru/userinfo",
+        "scopes": [
+          "mail.imap",
+          "userinfo"
+        ],
+        "redirectUriTemplate": "http://localhost:{port}/callback",
+        "extraParams": {
+          "prompt_force": "1"
+        },
+        "emailSource": "userInfo",
+        "appRegistrationUrl": "https://oauth.mail.ru/app/"
+      },
+      "serverCategories": "none",
+      "passwordLabel": "Passwort für externe Apps",
+      "passwordHelp": "Mail.ru verlangt für E-Mail-Programme ein „Passwort für externe Anwendungen“. Du kannst es in den Sicherheitseinstellungen deines Mail.ru-Kontos erstellen.",
+      "helpUrl": "https://account.mail.ru/user/2-step-auth/passwords/",
+      "allowInsecureLoopbackCertificate": false,
+      "saveSentViaImap": false
+    },
+    {
+      "id": "hostinger",
+      "name": "Hostinger Mail",
+      "color": "#673DE6",
+      "domains": [],
+      "imap": {
+        "host": "imap.hostinger.com",
+        "port": 993,
+        "security": "tls"
+      },
+      "smtp": {
+        "host": "smtp.hostinger.com",
+        "port": 465,
+        "security": "tls"
+      },
+      "authMethods": [
+        "password"
+      ],
+      "serverCategories": "none",
+      "passwordLabel": "Postfach-Passwort",
+      "passwordHelp": "Melde dich mit der vollständigen E-Mail-Adresse und dem Passwort deines Hostinger-Postfachs an. Vergessen? Im hPanel unter E-Mails → Konten kannst du es neu setzen.",
+      "helpUrl": "https://hpanel.hostinger.com/emails",
+      "allowInsecureLoopbackCertificate": false,
+      "saveSentViaImap": true
+    }
+  ],
+  "folderRoles": {
+    "inbox": {
+      "specialUse": [],
+      "names": [
+        "INBOX"
+      ]
+    },
+    "sent": {
+      "specialUse": [
+        "\\Sent"
+      ],
+      "names": [
+        "Sent",
+        "Sent Items",
+        "Sent Messages",
+        "INBOX.Sent",
+        "Gesendet",
+        "Gesendete Elemente",
+        "Отправленные",
+        "[Gmail]/Sent Mail",
+        "[Gmail]/Gesendet"
+      ]
+    },
+    "drafts": {
+      "specialUse": [
+        "\\Drafts"
+      ],
+      "names": [
+        "Drafts",
+        "INBOX.Drafts",
+        "Entwürfe",
+        "Черновики",
+        "[Gmail]/Drafts",
+        "[Gmail]/Entwürfe"
+      ]
+    },
+    "spam": {
+      "specialUse": [
+        "\\Junk"
+      ],
+      "names": [
+        "Spam",
+        "Junk",
+        "INBOX.Spam",
+        "INBOX.Junk",
+        "Спам",
+        "[Gmail]/Spam"
+      ]
+    },
+    "trash": {
+      "specialUse": [
+        "\\Trash"
+      ],
+      "names": [
+        "Trash",
+        "Deleted",
+        "Deleted Items",
+        "INBOX.Trash",
+        "Papierkorb",
+        "Корзина",
+        "[Gmail]/Trash",
+        "[Gmail]/Papierkorb"
+      ]
+    },
+    "archive": {
+      "specialUse": [
+        "\\Archive",
+        "\\All"
+      ],
+      "names": [
+        "Archive",
+        "INBOX.Archive",
+        "Archiv",
+        "Архив",
+        "[Gmail]/All Mail",
+        "[Gmail]/Alle Nachrichten"
+      ]
+    }
+  }
+}
