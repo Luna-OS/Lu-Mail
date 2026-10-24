@@ -18,10 +18,25 @@
         </DataTemplate>
 
         <DataTemplate x:Key="SidebarProviderTemplate" x:DataType="vm:SidebarItem">
-            <StackPanel Margin="10,16,0,2" Orientation="Horizontal" Spacing="8">
-                <Ellipse Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind DotBrush}" />
-                <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource LuTextSecondary}" Text="{x:Bind Title}" />
-            </StackPanel>
+            <Grid Height="30" Margin="0,12,0,0">
+                <Border Background="{ThemeResource LuSurfaceSelected}" CornerRadius="{StaticResource LuRadiusSmall}"
+                        Visibility="{x:Bind SelectionVisibility, Mode=OneWay}" />
+                <Grid Padding="10,0,8,0" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind DotBrush}" />
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{ThemeResource LuTextSecondary}" Text="{x:Bind Title}" />
+                    <Border Grid.Column="2" MinWidth="20" Padding="7,1,7,2" VerticalAlignment="Center"
+                            Background="{ThemeResource LuAccent}" CornerRadius="9" Visibility="{x:Bind BadgeVisibility, Mode=OneWay}">
+                        <TextBlock HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource LuAccentText}" Text="{x:Bind UnreadText, Mode=OneWay}" />
+                    </Border>
+                </Grid>
+            </Grid>
         </DataTemplate>
 
         <DataTemplate x:Key="SidebarAccountTemplate" x:DataType="vm:SidebarItem">
@@ -87,13 +102,21 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock FontSize="14" FontWeight="{x:Bind SenderWeight, Mode=OneWay}" Foreground="{ThemeResource LuTextPrimary}"
-                                   Text="{x:Bind Sender}" TextTrimming="CharacterEllipsis" />
+                                   Text="{x:Bind ParticipantsText}" TextTrimming="CharacterEllipsis" />
                         <FontIcon Grid.Column="1" FontSize="12" Foreground="{ThemeResource LuDanger}" Glyph="&#xE7C1;"
                                   Visibility="{x:Bind FlagVisibility, Mode=OneWay}" />
-                        <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextMuted}"
-                                   Text="{x:Bind DateText}" />
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                            <Border Padding="6,0,6,1" VerticalAlignment="Center" Background="{ThemeResource LuSurfaceSelected}"
+                                    CornerRadius="8" Visibility="{x:Bind ThreadVisibility}">
+                                <TextBlock FontSize="11" Foreground="{ThemeResource LuTextSecondary}" Text="{x:Bind ThreadCountText}" />
+                            </Border>
+                            <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextMuted}" Text="{x:Bind DateText}" />
+                        </StackPanel>
                     </Grid>
-                    <TextBlock FontSize="13" Foreground="{ThemeResource LuTextPrimary}" Text="{x:Bind Subject}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock FontSize="13" FontWeight="{x:Bind SubjectWeight, Mode=OneWay}" Foreground="{ThemeResource LuTextPrimary}"
+                               Text="{x:Bind Subject}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource LuAccent}" Text="{x:Bind InfoText, Mode=OneWay}"
+                               Visibility="{x:Bind InfoVisibility, Mode=OneWay}" />
                     <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" MaxLines="2" Text="{x:Bind Preview}"
                                TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
                     <Border Margin="0,3,0,0" Padding="7,1,7,2" HorizontalAlignment="Left"
@@ -104,6 +127,14 @@
                 </StackPanel>
             </Grid>
         </DataTemplate>
+
+        <DataTemplate x:Key="MessageHeaderTemplate" x:DataType="vm:MessageItem">
+            <TextBlock Margin="4,14,0,6" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource LuTextMuted}" Text="{x:Bind HeaderText}" />
+        </DataTemplate>
+
+        <views:MessageTemplateSelector x:Key="MessageTemplateSelector"
+                                       MessageTemplate="{StaticResource MessageTemplate}"
+                                       HeaderTemplate="{StaticResource MessageHeaderTemplate}" />
 
         <Style x:Key="SidebarItemContainerStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
             <Setter Property="MinHeight" Value="0" />
@@ -118,7 +149,7 @@
         </Style>
     </Page.Resources>
 
-    <Grid x:Name="RootGrid" Background="{ThemeResource LuSidebar}">
+    <Grid x:Name="RootGrid" Background="{ThemeResource LuSidebar}" CharacterReceived="OnRootCharacterReceived">
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="F5" Invoked="OnRefreshAccelerator" />
             <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="OnNewMailAccelerator" />
@@ -199,17 +230,63 @@
                 <StackPanel Padding="18,14,18,10" Spacing="2">
                     <TextBlock x:Name="ListTitleText" FontSize="20" FontWeight="SemiBold"
                                Foreground="{ThemeResource LuTextPrimary}" Text="Alle Posteingänge" TextTrimming="CharacterEllipsis" />
-                    <TextBlock x:Name="ListSubtitleText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" />
-                    <AutoSuggestBox x:Name="SearchBox" Margin="0,10,0,0" PlaceholderText="Geladene Nachrichten durchsuchen"
-                                    QueryIcon="Find" TextChanged="OnSearchTextChanged" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock x:Name="ListSubtitleText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" />
+                            <TextBlock x:Name="OfflineText" FontSize="12" Foreground="{ThemeResource LuDanger}"
+                                       Text="Offline – Anzeige aus dem Cache" Visibility="Collapsed" />
+                        </StackPanel>
+                        <ToggleButton x:Name="ConversationToggle" Grid.Column="1" Click="OnConversationToggleClick"
+                                      ToolTipService.ToolTip="Nachrichten als Konversationen gruppieren">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="13" Glyph="&#xE8BD;" />
+                                <TextBlock FontSize="12" Text="Als Konversationen" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </Grid>
+                    <AutoSuggestBox x:Name="SearchBox" Margin="0,10,0,0" PlaceholderText="Suchen – Enter sucht auch auf dem Server"
+                                    QueryIcon="Find" QuerySubmitted="OnSearchQuerySubmitted" TextChanged="OnSearchTextChanged" />
                 </StackPanel>
 
                 <ProgressBar x:Name="BusyBar" Grid.Row="1" IsIndeterminate="True" Visibility="Collapsed" />
 
-                <ListView x:Name="MessageList" Grid.Row="2" SelectionMode="Single"
+                <ListView x:Name="MessageList" Grid.Row="2" SelectionMode="Extended"
                           ItemContainerStyle="{StaticResource MessageItemContainerStyle}"
-                          ItemTemplate="{StaticResource MessageTemplate}"
+                          ItemTemplateSelector="{StaticResource MessageTemplateSelector}"
                           SelectionChanged="OnMessageSelectionChanged" />
+
+                <!-- Mehrfachauswahl -->
+                <Grid x:Name="BulkBar" Grid.Row="2" Margin="10" Padding="10,6,10,6" VerticalAlignment="Bottom"
+                      Background="{ThemeResource LuSurface}" BorderBrush="{ThemeResource LuBorder}" BorderThickness="1"
+                      CornerRadius="{StaticResource LuRadiusMedium}" Visibility="Collapsed">
+                    <StackPanel Orientation="Vertical" Spacing="6">
+                        <TextBlock x:Name="BulkText" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource LuTextSecondary}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Click="OnBulkSeenClick" ToolTipService.ToolTip="Gelesen">
+                                <FontIcon FontSize="14" Glyph="&#xE8C3;" />
+                            </Button>
+                            <Button Click="OnBulkUnseenClick" ToolTipService.ToolTip="Ungelesen">
+                                <FontIcon FontSize="14" Glyph="&#xE715;" />
+                            </Button>
+                            <Button Click="OnBulkFlagClick" ToolTipService.ToolTip="Markieren">
+                                <FontIcon FontSize="14" Glyph="&#xE7C1;" />
+                            </Button>
+                            <Button Click="OnBulkArchiveClick" ToolTipService.ToolTip="Archivieren">
+                                <FontIcon FontSize="14" Glyph="&#xE7B8;" />
+                            </Button>
+                            <Button Click="OnBulkDeleteClick" ToolTipService.ToolTip="Löschen">
+                                <FontIcon FontSize="14" Glyph="&#xE74D;" />
+                            </Button>
+                            <Button Click="OnBulkSpamClick" ToolTipService.ToolTip="Spam">
+                                <FontIcon FontSize="14" Glyph="&#xE730;" />
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
 
                 <TextBlock x:Name="EmptyText" Grid.Row="2" Margin="0,40,0,0" HorizontalAlignment="Center"
                            Foreground="{ThemeResource LuTextMuted}" Text="Keine Nachrichten" Visibility="Collapsed" />
@@ -316,6 +393,19 @@
                                 <FontIcon Glyph="&#xE715;" />
                             </AppBarButton.Icon>
                         </AppBarButton>
+                        <AppBarButton x:Name="SnoozeButton" Label="Später erinnern">
+                            <AppBarButton.Icon>
+                                <FontIcon Glyph="&#xE823;" />
+                            </AppBarButton.Icon>
+                            <AppBarButton.Flyout>
+                                <MenuFlyout x:Name="SnoozeFlyout" Opening="OnSnoozeFlyoutOpening" />
+                            </AppBarButton.Flyout>
+                        </AppBarButton>
+                        <AppBarButton x:Name="UnsubscribeButton" Click="OnUnsubscribeClick" Label="Abbestellen" Visibility="Collapsed">
+                            <AppBarButton.Icon>
+                                <FontIcon Glyph="&#xE8F8;" />
+                            </AppBarButton.Icon>
+                        </AppBarButton>
                         <AppBarButton x:Name="SortButton" Label="Einsortieren"
                                       ToolTipService.ToolTip="Absender immer als … einsortieren">
                             <AppBarButton.Icon>
@@ -327,8 +417,31 @@
                         </AppBarButton>
                     </CommandBar>
 
-                    <!-- Hinweis: externe Inhalte blockiert -->
-                    <Grid x:Name="ExternalBanner" Grid.Row="2" Margin="24,4,24,4" Padding="12,8,8,8"
+                    <!-- Hinweise: Phishing, Geplant, Erinnerung, externe Inhalte/Tracker -->
+                    <StackPanel Grid.Row="2" Spacing="4">
+                    <InfoBar x:Name="PhishingBar" Margin="24,4,24,0" IsClosable="True" IsOpen="False" Severity="Warning"
+                             Title="Vorsicht: möglicher Phishing-Versuch" />
+                    <Grid x:Name="ScheduledBar" Margin="24,4,24,0" Padding="12,8,8,8" Background="{ThemeResource LuSurfaceHover}"
+                          CornerRadius="{StaticResource LuRadiusMedium}" ColumnSpacing="8" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="ScheduledText" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Click="OnSendScheduledNowClick" Content="Jetzt senden" Style="{StaticResource AccentButtonStyle}" />
+                        <Button Grid.Column="2" Click="OnDeleteScheduledClick" Content="Löschen" />
+                    </Grid>
+                    <Grid x:Name="ReminderBar" Margin="24,4,24,0" Padding="12,8,8,8" Background="{ThemeResource LuSurfaceHover}"
+                          CornerRadius="{StaticResource LuRadiusMedium}" ColumnSpacing="8" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="ReminderText" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Click="OnUnsnoozeClick" Content="Erinnerung aufheben" />
+                    </Grid>
+                    <Grid x:Name="ExternalBanner" Margin="24,4,24,4" Padding="12,8,8,8"
                           Background="{ThemeResource LuSurfaceHover}" CornerRadius="{StaticResource LuRadiusMedium}"
                           ColumnSpacing="12" Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
@@ -337,10 +450,11 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon VerticalAlignment="Center" FontSize="14" Foreground="{ThemeResource LuTextSecondary}" Glyph="&#xE72E;" />
-                        <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}"
+                        <TextBlock x:Name="ExternalText" Grid.Column="1" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}"
                                    Text="Externe Bilder und Inhalte wurden zum Schutz deiner Privatsphäre blockiert." TextWrapping="Wrap" />
-                        <Button Grid.Column="2" Click="OnLoadExternalClick" Content="Externe Inhalte laden" />
+                        <Button x:Name="LoadExternalButton" Grid.Column="2" Click="OnLoadExternalClick" Content="Externe Inhalte laden" />
                     </Grid>
+                    </StackPanel>
 
                     <!-- Anhänge -->
                     <ScrollViewer x:Name="AttachmentsScroller" Grid.Row="3" Margin="24,2,24,4"
@@ -377,5 +491,20 @@
             </InfoBar>
             <InfoBar x:Name="MessageBar" IsClosable="True" IsOpen="False" Severity="Error" />
         </StackPanel>
+
+        <!-- App-Sperre -->
+        <Grid x:Name="LockOverlay" Grid.Row="0" Grid.RowSpan="2" Background="{ThemeResource LuBackground}" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
+                <FontIcon HorizontalAlignment="Center" FontSize="56" Foreground="{ThemeResource LuMoon}" Glyph="&#xE708;" />
+                <TextBlock HorizontalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}"
+                           Text="Lu-Mail ist gesperrt" />
+                <Button HorizontalAlignment="Center" Click="OnUnlockClick" Style="{StaticResource AccentButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontSize="14" Glyph="&#xE72E;" />
+                        <TextBlock Text="Mit Windows Hello entsperren" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Page>
