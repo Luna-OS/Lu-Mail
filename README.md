@@ -19,6 +19,29 @@ Ein nativer E-Mail-Client für **macOS** (Swift/SwiftUI) und **Windows** (C#/Win
 - **Lesen, Antworten, Allen antworten, Weiterleiten, Neue E-Mail, Archivieren, Löschen, Spam, Markieren.**
 - **Kyrillisch & Umlaute:** UTF-8, KOI8-R, Windows-1251, kyrillische Ordnernamen (Mail.ru).
 
+## Download
+
+Die fertigen Apps gibt es unter **[Releases](https://github.com/Luna-OS/Lu-Mail/releases/latest)**:
+
+| System | Datei |
+|--------|-------|
+| macOS 14+ (Apple Silicon & Intel) | `Lu-Mail-X.Y.Z-macOS.dmg` – öffnen und Lu-Mail in „Programme“ ziehen |
+| Windows 10/11 (Intel/AMD) | `Lu-Mail-X.Y.Z-Windows-x64-Setup.exe` |
+| Windows 11 auf ARM (z. B. Snapdragon) | `Lu-Mail-X.Y.Z-Windows-arm64-Setup.exe` |
+
+**Updates kommen automatisch:** Lu-Mail prüft regelmäßig auf neue Versionen, lädt sie im Hintergrund,
+kontrolliert die SHA-256-Prüfsumme und installiert sie beim nächsten Beenden – oder sofort über
+„Jetzt neu starten“. Einstellbar unter *Einstellungen → Updates*.
+
+> **Erster Start:** Die Apps sind (noch) nicht mit einem kostenpflichtigen Apple-/Microsoft-Zertifikat signiert.
+> - **macOS:** Beim ersten Öffnen *Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“* wählen.
+> - **Windows:** Bei „Der Computer wurde durch Windows geschützt“ auf *Weitere Informationen → Trotzdem ausführen* klicken.
+>
+> Danach startet Lu-Mail normal, und auch die Auto-Updates laufen ohne diese Nachfrage.
+
+**Neue Version veröffentlichen:** *Actions → CI → Run workflow* → Version (z. B. `0.2.0`) eintragen.
+Die CI baut beide Apps, legt das Release an und alle installierten Lu-Mail-Apps aktualisieren sich.
+
 ## Projektaufbau
 
 ```
@@ -38,6 +61,7 @@ Voraussetzung: macOS 14 (Sonoma) oder neuer, Xcode 15+ (oder die Command Line To
 cd macos
 swift run LuMail                 # direkt starten
 ./scripts/build-app.sh           # Lu-Mail.app nach macos/build/ bauen (Universal)
+./scripts/build-dmg.sh           # daraus macos/build/Lu-Mail.dmg erzeugen
 swift test                       # Tests
 ```
 
@@ -50,6 +74,7 @@ Voraussetzung: Windows 10 (1809+) oder 11, .NET 8 SDK, optional Visual Studio 20
 ```powershell
 dotnet build windows/src/LuMail.App/LuMail.App.csproj -c Release -p:Platform=x64
 dotnet test  windows/tests/LuMail.Core.Tests
+pwsh windows/installer/build-installer.ps1 -Arch x64 -Version 0.1.0   # Setup.exe (benötigt Inno Setup 6)
 ```
 
 Mehr in [windows/README.md](windows/README.md).

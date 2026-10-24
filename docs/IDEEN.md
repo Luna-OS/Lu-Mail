@@ -1,39 +1,43 @@
 # Ideen für Lu-Mail
 
-Vorschläge für die nächsten Ausbaustufen – grob nach Nutzen sortiert.
+## ✅ Umgesetzt (macOS und Windows, Details in [FUNKTIONEN.md](FUNKTIONEN.md))
 
-## Bald sinnvoll
-- **Push statt Abruf (IMAP IDLE):** neue Mails in Sekunden statt alle 3 Minuten.
-- **Mitteilungen:** System-Benachrichtigung bei neuen Mails im Posteingang (nicht bei Werbung).
-- **Offline-Cache:** Nachrichten lokal (SQLite) speichern → sofortiger Start, Lesen ohne Internet, schnelle Suche.
-- **Serversuche:** Suche nicht nur in geladenen, sondern in allen Nachrichten (IMAP `SEARCH`, Gmail `X-GM-RAW`).
-- **Anhänge senden** und Drag & Drop in das Verfassen-Fenster; HTML-Signatur pro Konto.
-- **Mehrfachauswahl:** viele Mails auf einmal archivieren, löschen, als gelesen markieren.
-- **Ungelesen-Zähler für alle Ordner** per IMAP `STATUS`.
+| Idee | Wo |
+|------|----|
+| Push statt Abruf (IMAP IDLE) | §1 |
+| Mitteilungen, Dock-/Taskleisten-Zähler, Menüleiste/Infobereich | §2 |
+| Offline-Cache | §3 |
+| Suche auf dem Server (Gmail mit `X-GM-RAW`) | §4 |
+| Anhänge senden, Drag & Drop, Signatur pro Konto, Kontakte mit Autovervollständigung | §5 |
+| Mehrfachauswahl und Tastenkürzel wie Gmail | §6 |
+| Ungelesen-Zähler für alle Ordner (IMAP `STATUS`) | §7 |
+| Konversationen | §8 |
+| Posteingang pro Anbieter | §9 |
+| Eigene Regeln und Kategorien | §10 |
+| Newsletter mit einem Klick abbestellen (RFC 8058) | §11 |
+| Werbung automatisch aufräumen | §12 |
+| Später erinnern und später senden | §13 |
+| Tracking-Bericht, Phishing-Warnung, App-Sperre (Touch ID / Windows Hello) | §14 |
+| Outlook, iCloud, GMX, WEB.DE, Yandex, „Andere (IMAP)“, STARTTLS | §15 |
+| Theme-Varianten Luna / Neumond / Vollmond und Akzentfarben | §16 |
+| Downloads (.dmg / Setup.exe) mit Auto-Updater | [ARCHITEKTUR.md](ARCHITEKTUR.md#downloads--auto-updater) |
 
-## Komfort
-- **Newsletter-Abmelden mit einem Klick** (Header `List-Unsubscribe` / RFC 8058) – direkt im Ordner „Werbung“.
-- **Werbung automatisch aufräumen:** z. B. alles älter als 30 Tage in „Werbung“ archivieren.
-- **Später erinnern (Snooze)** und **Später senden**.
-- **Tastaturkürzel wie Gmail** (j/k, e, #, r, a, f).
-- **Konversations-Ansicht** (Threads gruppieren).
-- **Gemeinsamer Posteingang pro Anbieter** („Alle Gmail-Konten“).
-- **Eigene Regeln/Filter** über Absender hinaus (Betreff, Empfänger, Stichwörter) und eigene Kategorien.
-- **Kontakte & Autovervollständigung** aus bisherigen Empfängern.
+## ⏳ Bewusst noch offen
 
-## Datenschutz & Sicherheit
-- **Tracking-Bericht:** zeigen, welche Tracker in einer Mail blockiert wurden.
-- **Phishing-Warnung,** wenn Anzeigename und Absenderadresse nicht zusammenpassen.
-- **App-Sperre** mit Touch ID / Windows Hello.
-- **PGP/S-MIME** für verschlüsselte Mails (für Proton-Kontakte besonders praktisch).
+- **PGP / S/MIME:** Verschlüsselung muss kryptografisch einwandfrei sein (Schlüsselverwaltung, Signaturprüfung,
+  Vertrauensmodell). Das sollte auf einer geprüften Bibliothek aufbauen (z. B. GopenPGP/Sequoia bzw. MimeKit
+  `MimeKit.Cryptography`) und gehört in ein eigenes, sorgfältig getestetes Paket.
+- **Smarte Zusammenfassungen (KI):** Würde Mail-Inhalte an einen KI-Dienst schicken. Dafür braucht es eine
+  bewusste Entscheidung (welcher Anbieter, eigener API-Schlüssel, Opt-in pro Nachricht). Sinnvoll als
+  optionale Funktion mit eigenem Schlüssel in den Einstellungen.
+- **iOS/iPadOS-App:** `LuMailCore` ist bereits plattformunabhängig; die App braucht aber eine eigene
+  Oberfläche (SwiftUI für iPhone/iPad), Hintergrundabruf und App-Store-Signierung – ein eigenes Projekt.
+- **Signierte Downloads:** Mit einem Apple-Developer-Zertifikat (Notarisierung) und einem
+  Code-Signing-Zertifikat für Windows entfallen die Warnungen beim ersten Start.
 
-## Weitere Anbieter
-- **Outlook/Hotmail** und **iCloud** (Outlook ebenfalls mit Browser-OAuth), **GMX/Web.de**, **Yandex**,
-  **„Anderer IMAP-Server“** mit frei wählbarem Server.
+## 💡 Neue Ideen
 
-## Lu-Mail-Welt
-- **Theme-Varianten** (z. B. „Neumond“ ganz dunkel, „Vollmond“ hell, Akzentfarbe frei wählbar) – die Tokens liegen
-  schon zentral in `shared/theme/lu-theme.json`.
-- **Menüleisten-/Taskleisten-Symbol** mit Ungelesen-Zähler.
-- **Smarte Zusammenfassung:** lange Newsletter oder Threads in zwei Sätzen zusammenfassen.
-- **iOS/iPadOS-App** auf Basis von `LuMailCore` (der Kern ist schon plattformunabhängig).
+- Gemeinsame Kalender-/Kontakt-Synchronisierung (CalDAV/CardDAV).
+- „Später lesen“-Liste und Wochenrückblick („Diese Woche: 42 Werbemails aufgeräumt“).
+- Vorlagen (Textbausteine) im Verfassen-Fenster.
+- Exportieren/Sichern eines Postfachs als `.mbox`.

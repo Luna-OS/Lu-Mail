@@ -13,6 +13,12 @@ struct SidebarView: View {
                 row("Alle Posteingänge", systemImage: "tray.2", item: .allInboxes)
                 row("Ungelesen", systemImage: "envelope.badge", item: .unread)
                 row("Markiert", systemImage: "star", item: .flagged, showsUnread: false)
+                if !model.snoozed.isEmpty {
+                    row("Erinnerungen", systemImage: "clock", item: .reminders, showsUnread: false, count: model.snoozed.count)
+                }
+                if !model.scheduled.isEmpty {
+                    row("Geplant", systemImage: "paperplane.circle", item: .scheduled, showsUnread: false, count: model.scheduled.count)
+                }
             } header: {
                 HStack(spacing: 6) {
                     MoonMark(size: 12)
@@ -22,6 +28,10 @@ struct SidebarView: View {
 
             ForEach(model.accountsByProvider, id: \.provider.id) { group in
                 Section {
+                    if group.accounts.count > 1 {
+                        row("Alle \(group.provider.name)-Posteingänge", systemImage: "tray.2", item: .providerInbox(group.provider.id),
+                            tint: LuTheme.provider(group.provider.id))
+                    }
                     ForEach(group.accounts) { account in
                         accountSection(account)
                     }
@@ -59,16 +69,16 @@ struct SidebarView: View {
             })
         DisclosureGroup(isExpanded: expanded) {
             if model.separateCategories {
-                ForEach(MailCategory.allCases, id: \.self) { category in
-                    row(category.title, systemImage: category.systemImage, item: .category(account.id, category),
-                        tint: category == .primary ? nil : LuTheme.category(category))
+                ForEach(model.allCategories, id: \.self) { category in
+                    row(category.title(model.rules), systemImage: category.systemImage(model.rules), item: .category(account.id, category),
+                        tint: category == .primary ? nil : LuTheme.category(category, rules: model.rules))
                 }
             } else {
                 row("Posteingang", systemImage: "tray", item: .category(account.id, .primary))
             }
             ForEach(model.sidebarFolders(of: account.id)) { folder in
                 row(folder.displayName, systemImage: folder.role?.systemImage ?? "folder",
-                    item: .folder(account.id, folder.path), showsUnread: false)
+                    item: .folder(account.id, folder.path), showsUnread: model.unreadCounts[account.id]?[folder.path] != nil)
             }
         } label: {
             HStack(spacing: 6) {
@@ -102,7 +112,8 @@ struct SidebarView: View {
         }
     }
 
-    private func row(_ title: String, systemImage: String, item: SidebarItem, tint: Color? = nil, showsUnread: Bool = true) -> some View {
+    private func row(_ title: String, systemImage: String, item: SidebarItem, tint: Color? = nil,
+                     showsUnread: Bool = true, count: Int? = nil) -> some View {
         HStack {
             Label {
                 Text(title).lineLimit(1)
@@ -110,7 +121,9 @@ struct SidebarView: View {
                 Image(systemName: systemImage).foregroundStyle(tint ?? LuTheme.accent)
             }
             Spacer(minLength: 4)
-            if showsUnread {
+            if let count {
+                Text("\(count)").font(.caption2).monospacedDigit().foregroundStyle(LuTheme.textSecondary)
+            } else if showsUnread {
                 UnreadBadge(count: model.unreadCount(item))
             }
         }

@@ -24,6 +24,10 @@ public sealed class AppPaths
     public string OAuthFile => Path.Combine(BaseDirectory, "oauth.json");
     public string SecretsFile => Path.Combine(BaseDirectory, "secrets.bin");
     public string SettingsFile => Path.Combine(BaseDirectory, "settings.json");
+    public string ContactsFile => Path.Combine(BaseDirectory, "contacts.json");
+    public string SnoozedFile => Path.Combine(BaseDirectory, "snoozed.json");
+    public string OutboxDirectory => Path.Combine(BaseDirectory, "outbox");
+    public string CacheDirectory => Path.Combine(BaseDirectory, "cache");
 
     public AppPaths EnsureCreated()
     {
@@ -132,140 +136,43 @@ public sealed class AccountStore
     }
 }
 
-/// <summary>
-/// Nutzer-Regeln „Absender immer als … einsortieren“ (<c>rules.json</c>), gelten für alle Konten.
-/// Format: flaches Objekt Absender-Adresse oder Domain → Kategorie-Id, z. B.
-/// <c>{ "news@shop.de": "promotions", "example.org": "social" }</c>.
-/// Beim Lesen werden auch <c>{ "rules": { … } }</c> und <c>[{ "sender": …, "category": … }]</c> akzeptiert.
-/// </summary>
-public sealed class SenderRuleStore : ISenderRuleLookup
-{
-    private readonly string? _path;
-    private readonly object _gate = new();
-    private Dictionary<string, MessageCategory> _rules;
-
-    public SenderRuleStore(string? path)
-    {
-        _path = path;
-        _rules = path is not null && File.Exists(path) ? Parse(SafeRead(path)) : new(StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Nur im Speicher (Tests).</summary>
-    public static SenderRuleStore InMemory() => new(null);
-
-    public event EventHandler? Changed;
-
-    public IReadOnlyDictionary<string, MessageCategory> All
-    {
-        get { lock (_gate) return new Dictionary<string, MessageCategory>(_rules, StringComparer.OrdinalIgnoreCase); }
-    }
-
-    public void Set(string senderAddressOrDomain, MessageCategory category)
-    {
-        var key = Normalize(senderAddressOrDomain);
-        if (key.Length == 0) return;
-        lock (_gate)
-        {
-            _rules[key] = category;
-            Persist();
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    public bool Remove(string senderAddressOrDomain)
-    {
-        bool removed;
-        lock (_gate)
-        {
-            removed = _rules.Remove(Normalize(senderAddressOrDomain));
-            if (removed) Persist();
-        }
-        if (removed) Changed?.Invoke(this, EventArgs.Empty);
-        return removed;
-    }
-
-    /// <summary>Exakte Adresse zuerst, dann Domain und übergeordnete Domains (z. B. mail.shop.de → shop.de).</summary>
-    public MessageCategory? Lookup(string? senderAddress)
-    {
-        var address = Normalize(senderAddress);
-        if (address.Length == 0) return null;
-        lock (_gate)
-        {
-            if (_rules.Count == 0) return null;
-            if (_rules.TryGetValue(address, out var exact)) return exact;
-            var domain = EmailParts.GetDomain(address);
-            while (domain.Contains('.'))
-            {
-                if (_rules.TryGetValue(domain, out var byDomain)) return byDomain;
-                domain = domain[(domain.IndexOf('.') + 1)..];
-            }
-            return null;
-        }
-    }
-
-    private static string Normalize(string? s) => (s ?? "").Trim().Trim('<', '>').ToLowerInvariant();
-
-    private void Persist()
-    {
-        if (_path is null) return;
-        var obj = _rules.OrderBy(r => r.Key, StringComparer.Ordinal).ToDictionary(r => r.Key, r => r.Value.ToId());
-        JsonFile.WriteAtomic(_path, JsonSerializer.Serialize(obj, LuJson.Options));
-    }
-
-    private static string SafeRead(string path)
-    {
-        try { return File.ReadAllText(path); }
-        catch (IOException) { return "{}"; }
-    }
-
-    internal static Dictionary<string, MessageCategory> Parse(string json)
-    {
-        var result = new Dictionary<string, MessageCategory>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
-            var root = doc.RootElement;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("rules", out var nested)) root = nested;
-
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var p in root.EnumerateObject())
-                {
-                    if (p.Value.ValueKind == JsonValueKind.String && MessageCategories.TryParse(p.Value.GetString(), out var c))
-                        result[Normalize(p.Name)] = c;
-                }
-            }
-            else if (root.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in root.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.Object) continue;
-                    string? sender = null, category = null;
-                    foreach (var p in item.EnumerateObject())
-                    {
-                        if (p.Value.ValueKind != JsonValueKind.String) continue;
-                        var name = p.Name.ToLowerInvariant();
-                        if (name is "sender" or "address" or "email" or "domain" or "key" or "pattern") sender = p.Value.GetString();
-                        else if (name is "category" or "categoryid") category = p.Value.GetString();
-                    }
-                    if (sender is not null && MessageCategories.TryParse(category, out var c)) result[Normalize(sender)] = c;
-                }
-            }
-        }
-        catch (JsonException)
-        {
-            // Defekte Datei: leere Regeln.
-        }
-        return result;
-    }
-}
-
 /// <summary>App-Einstellungen (<c>settings.json</c>).</summary>
 public sealed class AppSettings
 {
     public int RefreshIntervalMinutes { get; set; } = 3;
     public bool SeparateCategories { get; set; } = true;
     public bool AlwaysLoadExternalImages { get; set; }
+
+    /// <summary>Einstellung „Updates“: "Automatic" (Standard), "NotifyOnly" oder "Off".</summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+    public Update.UpdateMode Updates { get; set; } = Update.UpdateMode.Automatic;
+
+    /// <summary>„Mitteilungen“ (an).</summary>
+    public bool Notifications { get; set; } = true;
+
+    /// <summary>„Offline-Cache“ (an).</summary>
+    public bool OfflineCache { get; set; } = true;
+
+    /// <summary>„Als Konversationen“ in der Nachrichtenliste.</summary>
+    public bool Conversations { get; set; }
+
+    /// <summary>„Aufräumen nach“ je Kategorie-Id (promotions/social/updates/forums) in Tagen; 0/fehlend = aus.</summary>
+    public Dictionary<string, int> CleanupDays { get; set; } = new();
+
+    /// <summary>„Lu-Mail sperren mit Windows Hello“ (aus).</summary>
+    public bool AppLock { get; set; }
+
+    /// <summary>Sperren nach so vielen Minuten im Hintergrund (5 / 15 / 60).</summary>
+    public int AppLockMinutes { get; set; } = 5;
+
+    /// <summary>Darstellung: "system", "light", "dark".</summary>
+    public string ThemeMode { get; set; } = "system";
+
+    /// <summary>Variante: "luna", "neumond", "vollmond".</summary>
+    public string ThemeVariant { get; set; } = "luna";
+
+    /// <summary>Akzentfarbe: Schlüssel aus lu-theme.json → accents, leer = Akzent der Variante.</summary>
+    public string Accent { get; set; } = "";
 
     public static AppSettings Load(string path)
     {

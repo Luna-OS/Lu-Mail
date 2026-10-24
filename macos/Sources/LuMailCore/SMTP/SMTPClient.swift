@@ -27,9 +27,17 @@ public final class SMTPClient {
         reader = LineReader(transport: transport)
     }
 
-    public func send(_ message: OutgoingMessage, data: Data, auth: SMTPAuth, heloName: String = "lumail.local") async throws {
+    public func send(_ message: OutgoingMessage, data: Data, auth: SMTPAuth, heloName: String = "lumail.local",
+                     startTLS: Bool = false) async throws {
         try await expect(220, during: "Begrüßung")
         try await command("EHLO \(heloName)", expect: 250, during: "EHLO", captureExtensions: true)
+        if startTLS {
+            guard extensions.contains(where: { $0.uppercased().hasPrefix("STARTTLS") }) else { throw TransportError.startTLSUnavailable }
+            try await command("STARTTLS", expect: 220, during: "STARTTLS")
+            guard !reader.hasBufferedData else { throw TransportError.connectionFailed("Unerwartete Daten vor dem TLS-Handshake") }
+            try await transport.startTLS()
+            try await command("EHLO \(heloName)", expect: 250, during: "EHLO", captureExtensions: true)
+        }
 
         switch auth {
         case .password(let user, let password):

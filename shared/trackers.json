@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Bekannte Tracking-Dienste in E-Mails. Ein Bild gilt als Tracker, wenn sein Host diese Domain oder eine Subdomain davon ist – oder wenn es höchstens 1×1 Pixel groß ist.",
+  "domains": [
+    "list-manage.com", "mailchimp.com", "mcusercontent.com", "sendgrid.net", "sendgrid.com", "mailgun.org", "mailgun.net",
+    "mandrillapp.com", "mcsv.net", "exacttarget.com", "exct.net", "sfmc-content.com", "pardot.com", "hubspot.com",
+    "hubspotemail.net", "hs-analytics.net", "hsforms.com", "marketo.com", "mktoweb.com", "mktdns.com", "mkt.com",
+    "constantcontact.com", "rs6.net", "campaign-archive.com", "klaviyo.com", "klaviyomail.com", "sparkpostmail.com",
+    "mailjet.com", "mjt.lu", "sendinblue.com", "brevo.com", "sib-mail.com", "sendibt2.com", "cmail19.com", "cmail20.com",
+    "createsend.com", "createsend1.com", "awstrack.me", "amazonses.com", "google-analytics.com", "doubleclick.net",
+    "googleadservices.com", "facebook.com/tr", "bat.bing.com", "litmus.com", "emltrk.com", "mailtrack.io",
+    "getnotify.com", "yesware.com", "bananatag.com", "streak.com", "mixmax.com", "superhuman.com", "intercom.io",
+    "intercom-mail.com", "customer.io", "customeriomail.com", "iterable.com", "braze.com", "appboy.com",
+    "salesforce.com", "eloqua.com", "en25.com", "returnpath.net", "movable-ink-7158.com", "movableink.com",
+    "liveintent.com", "list-unsubscribe.com", "newsletter2go.com", "cleverreach.com", "rapidmail.com",
+    "inxmail.com", "episerver.net", "optimizely.com", "emarsys.net", "sailthru.com", "ometria.com"
+  ]
+}

@@ -52,6 +52,7 @@ public struct IMAPEnvelope: Sendable, Equatable {
     public var replyTo: [MailAddress]
     public var to: [MailAddress]
     public var cc: [MailAddress]
+    public var inReplyTo: String?
     public var messageId: String?
 
     init(values: [IMAPValue]) {
@@ -71,6 +72,7 @@ public struct IMAPEnvelope: Sendable, Equatable {
         replyTo = addresses(value(4))
         to = addresses(value(5))
         cc = addresses(value(6))
+        inReplyTo = value(8)?.text
         messageId = value(9)?.text
     }
 }
@@ -112,6 +114,18 @@ public final class IMAPClient {
         for response in responses where response.keyword == "CAPABILITY" {
             capabilities = Set(response.text.split(separator: " ").dropFirst().map { $0.uppercased() })
         }
+    }
+
+    /// STARTTLS (RFC 3501, 6.2.1): danach ist die Verbindung verschlüsselt, Fähigkeiten werden neu gelesen.
+    public func startTLS() async throws {
+        guard capabilities.isEmpty || capabilities.contains("STARTTLS") else { throw TransportError.startTLSUnavailable }
+        _ = try await execute("STARTTLS")
+        guard !reader.hasBufferedData else {
+            throw TransportError.connectionFailed("Unerwartete Daten vor dem TLS-Handshake")
+        }
+        try await transport.startTLS()
+        capabilities = []
+        try await refreshCapabilities()
     }
 
     public func login(username: String, password: String) async throws {
@@ -184,10 +198,81 @@ public final class IMAPClient {
     // MARK: Suchen & Laden
 
     public func uidSearch(_ criteria: String) async throws -> [UInt32] {
-        let responses = try await execute("UID SEARCH \(criteria)")
-        return responses
+        Self.searchResults(try await execute("UID SEARCH \(criteria)"))
+    }
+
+    /// Volltextsuche: Gmail über `X-GM-RAW`, sonst Absender/Betreff/Text (Nicht-ASCII als UTF-8-Literal).
+    public func searchText(_ text: String, gmail: Bool) async throws -> [UInt32] {
+        if gmail {
+            return Self.searchResults(try await execute("UID SEARCH X-GM-RAW", arguments: [.astring(text)]))
+        }
+        let charset = Self.needsLiteral(text) ? "CHARSET UTF-8 " : ""
+        return Self.searchResults(try await execute(
+            "UID SEARCH \(charset)OR OR FROM", arguments: [.astring(text), .raw("SUBJECT"), .astring(text), .raw("BODY"), .astring(text)]))
+    }
+
+    static func searchResults(_ responses: [IMAPResponse]) -> [UInt32] {
+        responses
             .filter { $0.keyword == "SEARCH" }
             .flatMap { $0.text.split(separator: " ").dropFirst().compactMap { UInt32($0) } }
+    }
+
+    /// `STATUS <Ordner> (UNSEEN MESSAGES)`.
+    public func status(_ path: String) async throws -> (unseen: Int, messages: Int) {
+        let responses = try await execute("STATUS", arguments: [.astring(path), .raw("(UNSEEN MESSAGES)")])
+        var unseen = 0, messages = 0
+        for response in responses where response.keyword == "STATUS" {
+            guard let values = try? response.values(), let list = values.last?.list else { continue }
+            var index = 0
+            while index + 1 < list.count {
+                switch list[index].text?.uppercased() {
+                case "UNSEEN": unseen = Int(list[index + 1].number ?? 0)
+                case "MESSAGES": messages = Int(list[index + 1].number ?? 0)
+                default: break
+                }
+                index += 2
+            }
+        }
+        return (unseen, messages)
+    }
+
+    // MARK: IDLE (RFC 2177)
+
+    public var supportsIdle: Bool { capabilities.contains("IDLE") }
+
+    /// Wartet per IDLE auf Änderungen im ausgewählten Ordner. `onChange` wird bei EXISTS/EXPUNGE/FETCH aufgerufen.
+    /// Endet nach `timeout` Sekunden oder bei Abbruch des Tasks (dann wird `DONE` gesendet).
+    public func idle(timeout: TimeInterval, onChange: @escaping @Sendable () -> Void) async throws {
+        tagCounter += 1
+        let tag = String(format: "L%04d", tagCounter)
+        try await transport.send(Data("\(tag) IDLE\r\n".utf8))
+        let first = try await reader.next()
+        guard first.kind == .continuation else {
+            throw IMAPError.commandFailed(command: "IDLE", response: first.text)
+        }
+        let transport = transport
+        let doneSender = Task {
+            try? await Task.sleep(nanoseconds: UInt64(max(1, timeout) * 1_000_000_000))
+            try? await transport.send(Data("DONE\r\n".utf8))
+        }
+        defer { doneSender.cancel() }
+        try await withTaskCancellationHandler {
+            while true {
+                let response = try await reader.next()
+                switch response.kind {
+                case .tagged(let responseTag) where responseTag == tag:
+                    if response.keyword == "OK" { return }
+                    throw IMAPError.commandFailed(command: "IDLE", response: response.statusText)
+                case .untagged:
+                    if ["EXISTS", "EXPUNGE", "FETCH", "RECENT"].contains(response.keyword) { onChange() }
+                    if response.keyword == "BYE" { throw IMAPError.disconnected(response.statusText) }
+                default:
+                    continue
+                }
+            }
+        } onCancel: {
+            Task { try? await transport.send(Data("DONE\r\n".utf8)) }
+        }
     }
 
     /// `FETCH` über Sequenznummern (z. B. „101:200“).

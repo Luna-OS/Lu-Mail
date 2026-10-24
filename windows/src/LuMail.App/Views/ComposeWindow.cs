@@ -15,7 +15,7 @@ public sealed class ComposeWindow : Window
     public ComposeWindow()
     {
         Title = "Neue E-Mail – Lu-Mail";
-        _page = new ComposePage();
+        _page = new ComposePage { HostWindow = this };
         Content = _page;
 
         ExtendsContentIntoTitleBar = true;
@@ -29,6 +29,9 @@ public sealed class ComposeWindow : Window
         _page.SubjectChanged += (_, subject) => Title = $"{subject} – Lu-Mail";
     }
 
-    public void Initialize(IReadOnlyList<Account> accounts, Account? from, OutgoingMessage? draft) =>
-        _page.Initialize(accounts, from, draft);
+    public void Initialize(IReadOnlyList<Account> accounts, Account? from, OutgoingMessage? draft, ViewModels.MainViewModel? vm = null)
+    {
+        _page.Initialize(accounts, from, draft, vm);
+        Services.ThemeService.ApplyMode(this, App.Services.Settings);
+    }
 }

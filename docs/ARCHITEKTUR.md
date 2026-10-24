@@ -57,7 +57,7 @@ bei Gmail gewinnt `\All` nur für „archive“, wenn kein `\Archive` existiert.
 Die Kategorien sind virtuelle Unterordner von INBOX.
 
 1. Lu-Mail lädt die neuesten **200** Nachrichten-Header aus INBOX
-   (`UID FETCH … (UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE LIST-ID LIST-POST PRECEDENCE)])`).
+   (`UID FETCH … (UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST LIST-ID LIST-POST PRECEDENCE REFERENCES)])`).
 2. **Gmail** (`serverCategories = "gmail"`): für promotions, social, updates, forums je
    `UID SEARCH UID <min>:<max> X-GM-RAW "<gmailQuery>"`. Treffer bekommen die Kategorie, Rest = primary.
 3. **Alle anderen**: lokaler Klassifizierer nach `categories.json → algorithm` (identisch in Swift und C#).
@@ -135,3 +135,38 @@ Automatische Aktualisierung alle 3 Minuten und per Button / ⌘R / F5.
 ```json
 [{ "id": "UUID", "providerId": "gmail", "email": "max@gmail.com", "displayName": "Max", "authMethod": "oauth2" }]
 ```
+
+## Downloads & Auto-Updater
+
+**Pakete** (gebaut von `.github/workflows/ci.yml`, veröffentlicht als GitHub-Release `vX.Y.Z`):
+
+| Datei | Inhalt |
+|-------|--------|
+| `Lu-Mail-X.Y.Z-macOS.dmg` | Universal-App (Apple Silicon + Intel), Ziehen nach „Programme“ |
+| `Lu-Mail-X.Y.Z-Windows-x64-Setup.exe` / `…-arm64-Setup.exe` | Inno-Setup-Installer, Installation pro Benutzer nach `%LOCALAPPDATA%\Programs\Lu-Mail` (keine Admin-Rechte) |
+| `SHA256SUMS.txt` | SHA-256 aller Pakete (`sha256sum`-Format: `<hex>  <Dateiname>`) |
+
+Ein Release entsteht über *Actions → CI → Run workflow* mit einer Versionsnummer oder durch Pushen eines Tags `vX.Y.Z`.
+
+**Auto-Updater** (beide Apps, Einstellungen in `shared/update.json`):
+
+1. `initialDelaySeconds` nach dem Start und danach alle `checkIntervalHours` Stunden:
+   `GET latestReleaseApi` (Header `Accept: application/vnd.github+json`, `User-Agent: Lu-Mail/<Version>`).
+2. `tag_name` ohne führendes `v` als Version `MAJOR.MINOR.PATCH` lesen; nur wenn größer als die eigene Version
+   (numerischer Vergleich je Teil) geht es weiter.
+3. Paket wählen: Asset, dessen Name auf `assetSuffixes[<plattform>]` endet (Windows: Prozessor-Architektur).
+   `SHA256SUMS.txt` laden; fehlt die Zeile für das Paket → Abbruch.
+4. Paket in einen temporären Ordner laden, SHA-256 prüfen; bei Abweichung löschen und abbrechen.
+5. Modus (Einstellung „Updates“):
+   - **Automatisch** (Standard): im Hintergrund laden; Hinweis „Lu-Mail X.Y.Z ist bereit – Jetzt neu starten“.
+     Ohne Klick wird das Update beim Beenden von Lu-Mail still installiert.
+   - **Nur benachrichtigen**: Hinweis mit „Herunterladen und neu starten“.
+   - **Aus**: keine automatische Prüfung (manuell über „Jetzt nach Updates suchen“).
+6. Installation:
+   - **macOS:** DMG mit `hdiutil attach -nobrowse -readonly` einhängen, `Lu-Mail.app` in einen Temp-Ordner kopieren,
+     aushängen. Ein Hilfsskript wartet auf das Ende des laufenden Prozesses, ersetzt das bisherige App-Bundle
+     (`Bundle.main.bundleURL`) per `ditto` und startet die App neu (nur bei „Jetzt neu starten“). Ist der Ordner nicht
+     beschreibbar oder läuft die App nicht aus einem `.app`-Bundle, öffnet Lu-Mail stattdessen das DMG.
+   - **Windows:** `Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1|0` starten und
+     Lu-Mail beenden. Das Setup startet Lu-Mail danach neu, wenn `/RELAUNCH=1` (bei „Jetzt neu starten“).
+7. Entwickler-Builds (macOS ohne `.app`-Bundle, Windows-Version `0.0.0`) prüfen nicht automatisch.

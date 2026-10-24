@@ -4,7 +4,7 @@ import XCTest
 final class ProviderCatalogTests: XCTestCase {
     func testLoadsAllProviders() throws {
         let catalog = ProviderCatalog.shared
-        XCTAssertEqual(catalog.providers.map(\.id), ["gmail", "proton", "mailru", "hostinger"])
+        XCTAssertEqual(catalog.providers.map(\.id), ["gmail", "outlook", "icloud", "proton", "mailru", "yandex", "gmx", "webde", "hostinger", "custom"])
         XCTAssertEqual(catalog.provider(forEmail: "x@inbox.ru")?.id, "mailru")
         XCTAssertEqual(catalog.provider(forEmail: "x@pm.me")?.id, "proton")
         XCTAssertNil(catalog.provider(forEmail: "x@meinefirma.de"))
@@ -17,7 +17,7 @@ final class ProviderCatalogTests: XCTestCase {
         let theme = ThemeTokens.shared
         XCTAssertEqual(theme.name, "Luna")
         XCTAssertNotNil(parseHexColor(theme.colors.dark.accent))
-        XCTAssertEqual(Set(theme.providers.keys), ["gmail", "proton", "mailru", "hostinger"])
+        XCTAssertEqual(Set(theme.providers.keys), Set(ProviderCatalog.shared.providers.map(\.id)))
         XCTAssertNil(parseHexColor("nope"))
     }
 }
@@ -26,9 +26,9 @@ final class ClassifierTests: XCTestCase {
     let classifier = CategoryClassifier.shared
 
     func category(_ from: String, _ subject: String = "Hallo", headers: [String: String] = [:],
-                  server: MailCategory? = nil, overrides: [String: MailCategory] = [:]) -> MailCategory {
+                  server: MailCategory? = nil, overrides: [String: MailCategory] = [:], rules: [ClassificationRule] = []) -> MailCategory {
         classifier.classify(from: AddressParser.parseSingle(from), subject: subject, headers: headers,
-                            serverCategory: server, overrides: overrides)
+                            serverCategory: server, rules: RuleSet(senders: overrides, rules: rules))
     }
 
     func testSocialBySubdomain() {
@@ -65,6 +65,32 @@ final class ClassifierTests: XCTestCase {
         // Nutzer-Regel schlägt Gmail-Kategorie, Gmail-Kategorie schlägt lokale Regeln.
         XCTAssertEqual(category("x@instagram.com", server: .primary), .primary)
         XCTAssertEqual(category("x@instagram.com", server: .primary, overrides: ["instagram.com": .updates]), .updates)
+    }
+
+    func testCustomRules() {
+        let invoices = MailCategory(rawValue: "custom-rechnungen")
+        let rules = [ClassificationRule(field: .subject, contains: "Rechnung", category: invoices),
+                     ClassificationRule(field: .from, contains: "Oma", category: .primary)]
+        XCTAssertEqual(category("billing@shop.de", "Ihre RECHNUNG März", rules: rules), invoices)
+        XCTAssertEqual(category("Oma Erna <erna@t-online.de>", "Newsletter", rules: rules), .primary)
+        // Absender-Regel kommt vor eigenen Regeln.
+        XCTAssertEqual(category("billing@shop.de", "Rechnung", overrides: ["shop.de": .updates], rules: rules), .updates)
+        XCTAssertEqual(classifier.classify(from: AddressParser.parseSingle("a@b.de"), to: [MailAddress(name: "Team", address: "team@firma.de")],
+                                           subject: "x", headers: [:],
+                                           rules: RuleSet(rules: [ClassificationRule(field: .to, contains: "team@", category: .forums)])), .forums)
+    }
+
+    func testRuleSetDecodesLegacyAndV2() throws {
+        XCTAssertEqual(RuleSet.decode(Data(#"{"News@Shop.de":"promotions"}"#.utf8)).senders, ["news@shop.de": .promotions])
+        let v2 = Data(##"{"version":2,"senders":{"a.de":"social"},"rules":[{"field":"subject","contains":"x","category":"custom-x"}],"customCategories":[{"id":"custom-x","name":"X","color":"#22C55E"}]}"##.utf8)
+        let decoded = RuleSet.decode(v2)
+        XCTAssertEqual(decoded.senders, ["a.de": .social])
+        XCTAssertEqual(decoded.rules.first?.category.rawValue, "custom-x")
+        XCTAssertEqual(decoded.customCategories.first?.name, "X")
+        let roundTrip = RuleSet.decode(try JSONEncoder().encode(decoded))
+        XCTAssertEqual(roundTrip, decoded)
+        XCTAssertEqual(CustomCategory.makeID(name: "Rechnungen & Belege", existing: []), "custom-rechnungen-belege")
+        XCTAssertEqual(CustomCategory.makeID(name: "Über", existing: [CustomCategory(id: "custom-uber", name: "x", color: "#000000")]), "custom-uber-2")
     }
 }
 
@@ -224,8 +250,8 @@ final class BrowserLoginTests: XCTestCase {
 
     func testPasswordFlow() async throws {
         let hostinger = try XCTUnwrap(ProviderCatalog.shared.provider(id: "hostinger"))
-        let router = BrowserLoginRouter(mode: .password(hostinger, emailHint: "info@firma.de"), port: 4000, state: "STATE") { _, password in
-            password == "richtig" ? nil : "Falsches Passwort"
+        let router = BrowserLoginRouter(mode: .password(hostinger, emailHint: "info@firma.de"), port: 4000, state: "STATE") { credentials in
+            credentials.password == "richtig" ? nil : "Falsches Passwort"
         }
         XCTAssertEqual(router.loginPageURL.absoluteString, "http://127.0.0.1:4000/login/STATE")
 
@@ -251,9 +277,32 @@ final class BrowserLoginTests: XCTestCase {
         XCTAssertNil(wrongPassword.outcome)
 
         let success = await router.handle(try post("state=STATE&email=a%40b.de&password=richtig"))
-        XCTAssertEqual(success.outcome, .success(.credentials(email: "a@b.de", password: "richtig")))
+        XCTAssertEqual(success.outcome, .success(.credentials(BrowserCredentials(email: "a@b.de", password: "richtig"))))
         let finished = await router.isFinished
         XCTAssertTrue(finished)
+    }
+
+    func testCustomServerForm() async throws {
+        let custom = try XCTUnwrap(ProviderCatalog.shared.provider(id: "custom"))
+        let router = BrowserLoginRouter(mode: .password(custom, emailHint: nil), port: 4100, state: "S") { credentials in
+            credentials.servers?.imap.host == "imap.firma.de" ? nil : "falscher Server"
+        }
+        let page = await router.handle(try request("GET /login/S HTTP/1.1\r\nHost: 127.0.0.1:4100\r\n\r\n"))
+        XCTAssertTrue(page.response.body.contains("name=\"imapHost\""))
+        XCTAssertFalse(page.response.body.contains("{{"))
+
+        func post(_ body: String) throws -> HTTPRequest {
+            try request("POST /login HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)")
+        }
+        let invalid = await router.handle(try post("state=S&email=a%40firma.de&password=x&imapHost=bad%20host&imapPort=993&smtpHost=smtp.firma.de&smtpPort=587"))
+        XCTAssertTrue(invalid.response.body.contains("gültigen IMAP-Server"))
+        XCTAssertNil(invalid.outcome)
+
+        let ok = await router.handle(try post("state=S&email=a%40firma.de&password=x&imapHost=IMAP.firma.de&imapPort=143&imapSecurity=starttls&smtpHost=smtp.firma.de&smtpPort=587&smtpSecurity=starttls"))
+        let expected = CustomServers(imap: ServerEndpoint(host: "imap.firma.de", port: 143, security: "starttls"),
+                                     smtp: ServerEndpoint(host: "smtp.firma.de", port: 587, security: "starttls"))
+        XCTAssertEqual(ok.outcome, .success(.credentials(BrowserCredentials(email: "a@firma.de", password: "x", servers: expected))))
+        XCTAssertTrue(LoginPages.login(provider: custom, state: "S", email: nil, error: nil, servers: expected).contains("value=\"starttls\" selected"))
     }
 
     func testOAuthCallback() async throws {
@@ -285,7 +334,7 @@ final class StoreTests: XCTestCase {
         try AccountStore(paths: paths).save(accounts)
         XCTAssertEqual(AccountStore(paths: paths).load(), accounts)
 
-        try SenderRuleStore(paths: paths).save(["shop.de": .promotions])
-        XCTAssertEqual(SenderRuleStore(paths: paths).load(), ["shop.de": .promotions])
+        try RuleStore(paths: paths).save(RuleSet(senders: ["shop.de": .promotions]))
+        XCTAssertEqual(RuleStore(paths: paths).load().senders, ["shop.de": .promotions])
     }
 }

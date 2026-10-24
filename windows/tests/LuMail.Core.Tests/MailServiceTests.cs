@@ -38,7 +38,7 @@ public class MailServiceTests
         var store = secrets;
         var tokens = new OAuthTokenManager(new OAuthClient(new HttpClient()), store, () => OAuthClientConfig.Empty);
         return new MailService(ProviderCatalog.LoadEmbedded(), CategoryCatalog.LoadEmbedded(),
-            new StoredCredentialSource(store, tokens), SenderRuleStore.InMemory(),
+            new StoredCredentialSource(store, tokens), RuleStore.InMemory(),
             new MailServiceOptions { Timeout = TimeSpan.FromSeconds(5) });
     }
 

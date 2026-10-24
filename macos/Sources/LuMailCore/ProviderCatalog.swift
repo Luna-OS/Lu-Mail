@@ -3,8 +3,27 @@ import Foundation
 public struct ServerEndpoint: Codable, Hashable, Sendable {
     public var host: String
     public var port: Int
-    /// "tls" = TLS ab dem ersten Byte (IMAPS 993 / SMTPS 465).
+    /// "tls" = TLS ab dem ersten Byte (IMAPS 993 / SMTPS 465), "starttls" = Klartext-Start, dann STARTTLS.
     public var security: String
+
+    public init(host: String, port: Int, security: String) {
+        self.host = host
+        self.port = port
+        self.security = security
+    }
+
+    public var usesSTARTTLS: Bool { security.lowercased() == "starttls" }
+}
+
+/// Eigene Server für „Andere (IMAP)“, pro Konto gespeichert.
+public struct CustomServers: Codable, Hashable, Sendable {
+    public var imap: ServerEndpoint
+    public var smtp: ServerEndpoint
+
+    public init(imap: ServerEndpoint, smtp: ServerEndpoint) {
+        self.imap = imap
+        self.smtp = smtp
+    }
 }
 
 public struct OAuthEndpoints: Codable, Hashable, Sendable {
@@ -36,8 +55,11 @@ public struct Provider: Codable, Hashable, Identifiable, Sendable {
     public var allowInsecureLoopbackCertificate: Bool
     /// Manche Server legen per SMTP gesendete Mails nicht selbst in „Gesendet“ ab.
     public var saveSentViaImap: Bool?
+    /// Server werden bei der Anmeldung eingegeben („Andere (IMAP)“).
+    public var customServers: Bool?
 
     public var usesGmailCategories: Bool { serverCategories == "gmail" }
+    public var needsCustomServers: Bool { customServers == true }
 }
 
 public struct FolderRoleHints: Codable, Hashable, Sendable {
@@ -74,7 +96,7 @@ public struct ProviderCatalog: Sendable {
         providers.first { $0.id == id }
     }
 
-    /// Findet den Anbieter zu einer Adresse anhand der Domain (Hostinger hat eigene Domains → nil).
+    /// Findet den Anbieter zu einer Adresse anhand der Domain (Hostinger/Andere haben eigene Domains → nil).
     public func provider(forEmail email: String) -> Provider? {
         let domain = MailAddress(name: nil, address: email).domain
         return providers.first { $0.domains.contains(domain) }

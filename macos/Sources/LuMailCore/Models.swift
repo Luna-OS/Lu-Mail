@@ -13,23 +13,45 @@ public struct Account: Codable, Hashable, Identifiable, Sendable {
     public var email: String
     public var displayName: String
     public var authMethod: AuthMethod
+    /// Nur bei „Andere (IMAP)“.
+    public var customServers: CustomServers?
+    /// Signatur für neue Mails und Antworten (Text).
+    public var signature: String?
 
-    public init(id: UUID = UUID(), providerId: String, email: String, displayName: String, authMethod: AuthMethod) {
+    public init(id: UUID = UUID(), providerId: String, email: String, displayName: String, authMethod: AuthMethod,
+                customServers: CustomServers? = nil, signature: String? = nil) {
         self.id = id
         self.providerId = providerId
         self.email = email
         self.displayName = displayName
         self.authMethod = authMethod
+        self.customServers = customServers
+        self.signature = signature
     }
+
+    public func imapEndpoint(_ provider: Provider) -> ServerEndpoint { customServers?.imap ?? provider.imap }
+    public func smtpEndpoint(_ provider: Provider) -> ServerEndpoint { customServers?.smtp ?? provider.smtp }
 }
 
-/// Die virtuellen Kategorie-Ordner unterhalb des Posteingangs.
-public enum MailCategory: String, Codable, CaseIterable, Sendable {
-    case primary
-    case promotions
-    case social
-    case updates
-    case forums
+/// Ein virtueller Kategorie-Ordner unterhalb des Posteingangs – fest eingebaut oder selbst angelegt.
+public struct MailCategory: RawRepresentable, Hashable, Codable, Sendable, CustomStringConvertible {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let primary = MailCategory(rawValue: "primary")
+    public static let promotions = MailCategory(rawValue: "promotions")
+    public static let social = MailCategory(rawValue: "social")
+    public static let updates = MailCategory(rawValue: "updates")
+    public static let forums = MailCategory(rawValue: "forums")
+
+    /// Die fest eingebauten Kategorien in Sidebar-Reihenfolge.
+    public static let builtIn: [MailCategory] = [.primary, .promotions, .social, .updates, .forums]
+
+    public var isBuiltIn: Bool { Self.builtIn.contains(self) }
+    public var description: String { rawValue }
 }
 
 /// Bekannte Rollen von Server-Ordnern.
@@ -138,6 +160,8 @@ public struct MessageSummary: Hashable, Identifiable, Sendable {
     public var category: MailCategory?
     /// Für die Sortierung relevante Header (klein geschrieben).
     public var listHeaders: [String: String]
+    public var inReplyTo: String?
+    public var references: String?
 
     public var id: String { "\(accountId.uuidString)|\(folderPath)|\(uid)" }
     public var isSeen: Bool { flags.contains("\\Seen") }
@@ -145,7 +169,8 @@ public struct MessageSummary: Hashable, Identifiable, Sendable {
 
     public init(accountId: UUID, folderPath: String, uid: UInt32, from: MailAddress?, to: [MailAddress] = [], cc: [MailAddress] = [],
                 replyTo: [MailAddress] = [], subject: String, date: Date, messageId: String? = nil, flags: Set<String> = [],
-                size: Int = 0, category: MailCategory? = nil, listHeaders: [String: String] = [:]) {
+                size: Int = 0, category: MailCategory? = nil, listHeaders: [String: String] = [:],
+                inReplyTo: String? = nil, references: String? = nil) {
         self.accountId = accountId
         self.folderPath = folderPath
         self.uid = uid
@@ -160,5 +185,12 @@ public struct MessageSummary: Hashable, Identifiable, Sendable {
         self.size = size
         self.category = category
         self.listHeaders = listHeaders
+        self.inReplyTo = inReplyTo
+        self.references = references
+    }
+
+    /// Einträge für „Abbestellen“.
+    public var unsubscribe: UnsubscribeMethod? {
+        UnsubscribeMethod.parse(listUnsubscribe: listHeaders["list-unsubscribe"], listUnsubscribePost: listHeaders["list-unsubscribe-post"])
     }
 }

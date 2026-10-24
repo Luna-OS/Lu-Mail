@@ -7,6 +7,7 @@
     <Deterministic>true</Deterministic>
     <Company>Lu-Mail</Company>
     <Product>Lu-Mail</Product>
+    <!-- Die CI setzt beim Release -p:Version=1.2.3 -->
     <Version>0.1.0</Version>
   </PropertyGroup>
 </Project>

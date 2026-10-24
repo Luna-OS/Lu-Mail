@@ -200,7 +200,10 @@ public struct OAuthFlow: Sendable {
         let parts = token.split(separator: ".")
         guard parts.count >= 2, let payload = Data(base64URLEncoded: String(parts[1])),
               let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else { return nil }
-        return object["email"] as? String
+        if let email = object["email"] as? String { return email }
+        // Microsoft-Konten liefern die Adresse teils nur als „preferred_username“.
+        if let username = object["preferred_username"] as? String, username.contains("@") { return username }
+        return nil
     }
 
     public static func email(fromUserInfo data: Data) -> String? {

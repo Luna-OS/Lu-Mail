@@ -13,6 +13,10 @@ public sealed class ThemeCatalog
     public IReadOnlyDictionary<string, string> ProviderColors { get; }
     public IReadOnlyDictionary<string, string> CategoryColors { get; }
     public IReadOnlyDictionary<string, double> Radius { get; }
+    /// <summary>Varianten (luna, neumond, vollmond) in Dateireihenfolge.</summary>
+    public IReadOnlyList<ThemeVariant> Variants { get; }
+    /// <summary>Akzentfarben (lila, blau, …) in Dateireihenfolge.</summary>
+    public IReadOnlyList<ThemeAccent> Accents { get; }
 
     private ThemeCatalog(JsonElement root)
     {
@@ -24,6 +28,52 @@ public sealed class ThemeCatalog
         CategoryColors = ReadStrings(root.GetProperty("categories"));
         Radius = root.GetProperty("radius").EnumerateObject()
             .ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.OrdinalIgnoreCase);
+
+        var variants = new List<ThemeVariant>();
+        if (root.TryGetProperty("variants", out var vs))
+        {
+            foreach (var v in vs.EnumerateObject())
+            {
+                var c = v.Value.GetProperty("colors");
+                variants.Add(new ThemeVariant(v.Name,
+                    v.Value.TryGetProperty("name", out var n2) ? n2.GetString() ?? v.Name : v.Name,
+                    v.Value.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "",
+                    ReadStrings(c.GetProperty("dark")), ReadStrings(c.GetProperty("light"))));
+            }
+        }
+        if (variants.Count == 0) variants.Add(new ThemeVariant("luna", "Luna", "", Dark, Light));
+        Variants = variants;
+
+        var accents = new List<ThemeAccent>();
+        if (root.TryGetProperty("accents", out var acs))
+        {
+            foreach (var a in acs.EnumerateObject())
+                accents.Add(new ThemeAccent(a.Name, a.Value.GetProperty("name").GetString() ?? a.Name,
+                    a.Value.GetProperty("dark").GetString() ?? "", a.Value.GetProperty("light").GetString() ?? ""));
+        }
+        Accents = accents;
+    }
+
+    /// <summary>Variante nach Id (unbekannt → erste, also Luna).</summary>
+    public ThemeVariant Variant(string? id) =>
+        Variants.FirstOrDefault(v => string.Equals(v.Id, id, StringComparison.OrdinalIgnoreCase)) ?? Variants[0];
+
+    /// <summary>
+    /// Effektive Palette: Farben der Variante; mit Akzent werden accent, accentHover und unreadDot ersetzt.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Palette(string? variantId, bool dark, string? accentId)
+    {
+        var variant = Variant(variantId);
+        var palette = new Dictionary<string, string>(dark ? variant.Dark : variant.Light, StringComparer.OrdinalIgnoreCase);
+        var accent = Accents.FirstOrDefault(a => string.Equals(a.Id, accentId, StringComparison.OrdinalIgnoreCase));
+        if (accent is not null)
+        {
+            var hex = dark ? accent.Dark : accent.Light;
+            palette["accent"] = hex;
+            palette["accentHover"] = hex;
+            palette["unreadDot"] = hex;
+        }
+        return palette;
     }
 
     private static Dictionary<string, string> ReadStrings(JsonElement obj) =>
@@ -51,3 +101,10 @@ public sealed class ThemeCatalog
         return (P(0), P(2), P(4), P(6));
     }
 }
+
+/// <summary>Variante aus lu-theme.json → variants.</summary>
+public sealed record ThemeVariant(string Id, string Name, string Description,
+    IReadOnlyDictionary<string, string> Dark, IReadOnlyDictionary<string, string> Light);
+
+/// <summary>Akzentfarbe aus lu-theme.json → accents.</summary>
+public sealed record ThemeAccent(string Id, string Name, string Dark, string Light);

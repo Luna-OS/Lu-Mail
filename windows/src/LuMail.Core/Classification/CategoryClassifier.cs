@@ -8,43 +8,58 @@ namespace LuMail.Core.Classification;
 /// <param name="Subject">Betreff.</param>
 /// <param name="Headers">Zusätzliche Header (List-Unsubscribe, List-Id, List-Post, Precedence), case-insensitive.</param>
 /// <param name="ServerCategory">Gmail: Kategorie vom Server (X-GM-RAW), sonst null.</param>
+/// <param name="FromName">Anzeigename des Absenders (für Regeln mit field = from).</param>
+/// <param name="To">Alle Empfänger (Adressen und Namen; für Regeln mit field = to).</param>
 public sealed record ClassificationInput(
     string? FromAddress,
     string? Subject,
     IReadOnlyDictionary<string, string>? Headers = null,
-    MessageCategory? ServerCategory = null);
+    MessageCategory? ServerCategory = null,
+    string? FromName = null,
+    IReadOnlyList<string>? To = null);
 
-/// <summary>Nutzer-Regeln „Absender immer als … einsortieren“.</summary>
-public interface ISenderRuleLookup
+/// <summary>Eigene Regeln aus rules.json (senders und rules).</summary>
+public interface ICategoryRuleSource
 {
-    /// <summary>Kategorie für eine Absender-Adresse (Adresse oder Domain) oder null.</summary>
-    MessageCategory? Lookup(string? senderAddress);
+    /// <summary>Kategorie-Id für eine Absender-Adresse (Adresse oder Domain) oder null.</summary>
+    string? LookupSender(string? senderAddress);
+
+    /// <summary>Kategorie-Id der ersten passenden Inhaltsregel oder null.</summary>
+    string? MatchRule(string? fromName, string? fromAddress, IEnumerable<string>? to, string? subject);
 }
 
 /// <summary>
-/// Lokaler Klassifizierer – exakt nach <c>categories.json → algorithm</c> (Schritte 1–8),
-/// identisch zur macOS-Implementierung.
+/// Klassifizierer: <b>senders</b> → <b>rules</b> (erste passende) → Gmail-Server-Kategorie →
+/// lokale Regeln exakt nach <c>categories.json → algorithm</c> (Schritte 3–8), identisch zur macOS-Implementierung.
+/// Liefert eine Kategorie-Id ("primary", …, oder eine eigene "custom-…").
 /// </summary>
 public sealed class CategoryClassifier
 {
     private readonly CategoryCatalog _catalog;
-    private readonly ISenderRuleLookup? _userRules;
+    private readonly ICategoryRuleSource? _userRules;
 
-    public CategoryClassifier(CategoryCatalog catalog, ISenderRuleLookup? userRules = null)
+    public CategoryClassifier(CategoryCatalog catalog, ICategoryRuleSource? userRules = null)
     {
         _catalog = catalog;
         _userRules = userRules;
     }
 
-    public MessageCategory Classify(ClassificationInput input)
+    public string Classify(ClassificationInput input)
+    {
+        // senders (Nutzer-Regel pro Absender) gewinnt immer.
+        if (_userRules?.LookupSender(input.FromAddress) is { Length: > 0 } sender) return sender;
+        // rules: erste passende Inhaltsregel.
+        if (_userRules?.MatchRule(input.FromName, input.FromAddress, input.To, input.Subject) is { Length: > 0 } rule) return rule;
+        return ClassifyBuiltIn(input).ToId();
+    }
+
+    /// <summary>Ohne eigene Regeln: Gmail-Server-Kategorie, sonst categories.json Schritte 3–8.</summary>
+    public MessageCategory ClassifyBuiltIn(ClassificationInput input)
     {
         var address = (input.FromAddress ?? "").Trim().ToLowerInvariant();
         var domain = EmailParts.GetDomain(address);
         var localPart = EmailParts.GetLocalPart(address);
         var subject = (input.Subject ?? "").ToLowerInvariant();
-
-        // 1. Nutzer-Regel gewinnt immer.
-        if (_userRules?.Lookup(address) is { } userCategory) return userCategory;
 
         // 2. Gmail: Kategorie vom Server. Nur wenn keine geliefert wird, geht es lokal weiter.
         if (input.ServerCategory is { } serverCategory) return serverCategory;

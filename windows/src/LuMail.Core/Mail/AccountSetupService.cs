@@ -50,13 +50,16 @@ public sealed class AccountSetupService
             return account;
         }
 
-        if (!provider.SupportsPassword && !provider.SupportsOAuth)
-            throw new MailServiceException($"{provider.Name} unterstützt keine Anmeldeart.");
+        if (!provider.SupportsPassword)
+            throw new MailServiceException(provider.SupportsOAuth
+                ? $"{provider.Name} unterstützt nur OAuth. Bitte eine eigene Client-ID für „{provider.Id}“ in oauth.json eintragen."
+                : $"{provider.Name} unterstützt keine Anmeldeart.");
 
         var password = await _login.LoginWithPasswordAsync(provider, hint,
-            (email, pw, token) => _mail.VerifyPasswordAsync(provider, email, pw, token), ct).ConfigureAwait(false);
+            (email, pw, servers, token) => _mail.VerifyPasswordAsync(provider, email, pw, servers, token), ct).ConfigureAwait(false);
 
         var pwAccount = FindOrCreate(provider, password.Email, null, Account.AuthPassword);
+        if (provider.CustomServers) pwAccount.CustomServers = password.Servers;
         await _mail.ForgetAccountAsync(pwAccount.Id).ConfigureAwait(false);
         _secrets.Remove(SecretKeys.RefreshToken(pwAccount.Id));
         _tokens.Invalidate(pwAccount.Id);
@@ -65,6 +68,9 @@ public sealed class AccountSetupService
         return pwAccount;
     }
 
+    /// <summary>Wird nach dem Entfernen eines Kontos aufgerufen (z. B. Cache löschen).</summary>
+    public event EventHandler<Account>? AccountRemoved;
+
     public async Task RemoveAccountAsync(Account account)
     {
         await _mail.ForgetAccountAsync(account.Id).ConfigureAwait(false);
@@ -72,6 +78,7 @@ public sealed class AccountSetupService
         _secrets.Remove(SecretKeys.Password(account.Id));
         _secrets.Remove(SecretKeys.RefreshToken(account.Id));
         _accounts.Remove(account.Id);
+        AccountRemoved?.Invoke(this, account);
     }
 
     private Account FindOrCreate(Provider provider, string email, string? displayName, string authMethod)

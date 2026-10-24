@@ -19,12 +19,20 @@ public sealed class AppServices
     public ThemeCatalog Theme { get; }
     public ISecretStore Secrets { get; }
     public AccountStore Accounts { get; }
-    public SenderRuleStore SenderRules { get; }
+    public RuleStore Rules { get; }
     public AppSettings Settings { get; }
     public OAuthTokenManager Tokens { get; }
     public MailService Mail { get; }
     public BrowserLoginService Login { get; }
     public AccountSetupService Setup { get; }
+    public ContactStore Contacts { get; }
+    public SnoozeStore Snoozes { get; }
+    public OutboxStore Outbox { get; }
+    public OfflineCache Cache { get; }
+    public TrackerDetector Trackers { get; } = TrackerDetector.LoadEmbedded();
+    public PhishingDetector Phishing { get; } = PhishingDetector.LoadEmbedded();
+    /// <summary>HttpClient ohne Cookies für One-Click-Abbestellen.</summary>
+    public HttpClient UnsubscribeHttp { get; } = OneClickUnsubscribe.CreateClient();
 
     private AppServices(AppPaths paths)
     {
@@ -34,16 +42,26 @@ public sealed class AppServices
         Theme = ThemeCatalog.LoadEmbedded();
         Secrets = new DpapiSecretStore(paths.SecretsFile);
         Accounts = new AccountStore(paths.AccountsFile);
-        SenderRules = new SenderRuleStore(paths.RulesFile);
+        Rules = new RuleStore(paths.RulesFile);
         Settings = AppSettings.Load(paths.SettingsFile);
 
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Lu-Mail/0.1 (Windows)");
         var oauth = new OAuthClient(http);
         Tokens = new OAuthTokenManager(oauth, Secrets, LoadOAuthConfig);
-        Mail = new MailService(Providers, Categories, new StoredCredentialSource(Secrets, Tokens), SenderRules);
+        Mail = new MailService(Providers, Categories, new StoredCredentialSource(Secrets, Tokens), Rules);
         Login = new BrowserLoginService(OpenInBrowser, oauth);
         Setup = new AccountSetupService(Login, Mail, Accounts, Secrets, Tokens, LoadOAuthConfig);
+        Contacts = new ContactStore(paths.ContactsFile);
+        Snoozes = new SnoozeStore(paths.SnoozedFile);
+        Outbox = new OutboxStore(paths.OutboxDirectory);
+        Cache = new OfflineCache(paths.CacheDirectory);
+        Mail.Cache = Settings.OfflineCache ? Cache : null;
+        Setup.AccountRemoved += (_, account) =>
+        {
+            Cache.RemoveAccount(account.Id);
+            Snoozes.RemoveAccount(account.Id);
+        };
     }
 
     public static AppServices Create() => new(AppPaths.Default().EnsureCreated());
@@ -52,6 +70,20 @@ public sealed class AppServices
     public OAuthClientConfig LoadOAuthConfig() => OAuthClientConfig.Load(Paths.OAuthFile);
 
     public void SaveSettings() => Settings.Save(Paths.SettingsFile);
+
+    /// <summary>Anzeigename einer Kategorie-Id (eingebaut oder eigene).</summary>
+    public string CategoryName(string? id)
+    {
+        if (MessageCategories.TryParse(id, out var builtIn)) return Categories.DisplayName(builtIn);
+        return Rules.FindCategory(id)?.Name ?? id ?? "";
+    }
+
+    /// <summary>Farbe (Hex) einer Kategorie-Id.</summary>
+    public string CategoryColor(string? id)
+    {
+        if (id is not null && Theme.CategoryColors.TryGetValue(id, out var hex)) return hex;
+        return Rules.FindCategory(id)?.Color ?? "#8B7CFF";
+    }
 
     /// <summary>Öffnet eine URL im Standardbrowser.</summary>
     public static void OpenInBrowser(Uri uri) =>
@@ -78,6 +110,7 @@ public static class BrushCache
 
     public static SolidColorBrush ForProvider(Provider? provider) => FromHex(provider?.Color ?? "#8B7CFF");
 
-    public static SolidColorBrush ForCategory(MessageCategory category) =>
-        FromHex(App.Services.Theme.CategoryColors.TryGetValue(category.ToId(), out var hex) ? hex : "#8B7CFF");
+    public static SolidColorBrush ForCategory(MessageCategory category) => ForCategory(category.ToId());
+
+    public static SolidColorBrush ForCategory(string? categoryId) => FromHex(App.Services.CategoryColor(categoryId));
 }

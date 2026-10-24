@@ -61,6 +61,43 @@ public static partial class HtmlPreparer
             : meta + html;
     }
 
+    /// <summary>
+    /// Konversation: alle Nachrichten untereinander (älteste zuerst), ältere in <c>&lt;details&gt;</c> eingeklappt –
+    /// funktioniert ohne JavaScript. Ein Dokument mit einer CSP.
+    /// </summary>
+    public static string PrepareConversation(IReadOnlyList<MessageDetail> messages, bool allowExternalContent, PlainTextStyle? style = null)
+    {
+        var st = style ?? PlainTextStyle.Light;
+        var sb = new StringBuilder("<!doctype html><html><head><meta charset=\"utf-8\"><style>")
+            .Append($"html,body{{background:{st.Background};color:{st.Foreground};}}")
+            .Append("body{margin:12px;font:14px/1.5 'Segoe UI Variable','Segoe UI',-apple-system,system-ui,sans-serif;}")
+            .Append($"a{{color:{st.Link};}}")
+            .Append("details{border:1px solid rgba(128,128,128,.35);border-radius:10px;margin:0 0 10px;padding:0 12px;}")
+            .Append("summary{cursor:pointer;padding:10px 0;font-weight:600;}summary span{font-weight:400;opacity:.7;margin-left:8px;}")
+            .Append(".body{padding:0 0 12px;overflow-x:auto;}pre{white-space:pre-wrap;word-wrap:break-word;font:inherit;margin:0;}")
+            .Append("</style></head><body>");
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var m = messages[i];
+            var open = i == messages.Count - 1 ? " open" : "";
+            var date = m.Date.ToLocalTime().ToString("dd.MM.yyyy HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+            sb.Append("<details").Append(open).Append("><summary>").Append(Html.Escape(m.From?.DisplayName ?? "Unbekannt"))
+              .Append("<span>").Append(Html.Escape(date)).Append("</span></summary><div class=\"body\">");
+            if (!string.IsNullOrWhiteSpace(m.HtmlBody))
+            {
+                var body = m.InlineResources.Count > 0 ? ReplaceCidReferences(m.HtmlBody!, m.InlineResources) : m.HtmlBody!;
+                sb.Append(OuterDocumentTags().Replace(LeadingDoctype().Replace(body, ""), ""));
+            }
+            else
+            {
+                sb.Append("<pre>").Append(Html.Escape(m.TextBody ?? "")).Append("</pre>");
+            }
+            sb.Append("</div></details>");
+        }
+        sb.Append("</body></html>");
+        return InjectCsp(sb.ToString(), allowExternalContent ? RelaxedCsp : BlockedCsp);
+    }
+
     /// <summary>Klartext → escaptes HTML mit klickbaren Links.</summary>
     public static string PlainTextToHtml(string text, PlainTextStyle style)
     {
@@ -113,6 +150,9 @@ public static partial class HtmlPreparer
         text = ManyNewlines().Replace(text, "\n\n");
         return text.Trim();
     }
+
+    [GeneratedRegex(@"</?(html|body)\b[^>]*>|<head\b[^>]*>.*?</head\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex OuterDocumentTags();
 
     [GeneratedRegex(@"^\s*<!doctype[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex LeadingDoctype();

@@ -1,8 +1,11 @@
+using System.Text.Json.Serialization;
+
 namespace LuMail.Core.Models;
 
 /// <summary>Eine E-Mail-Adresse mit optionalem Namen.</summary>
 public sealed record MailAddress(string? Name, string Address)
 {
+    [JsonIgnore]
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Address : Name!;
 
     public override string ToString() =>
@@ -23,13 +26,30 @@ public sealed class MessageSummary
     public DateTimeOffset Date { get; init; }
     public bool Seen { get; set; }
     public bool Flagged { get; set; }
-    /// <summary>Nur für INBOX-Nachrichten gesetzt.</summary>
-    public MessageCategory? Category { get; set; }
+    /// <summary>Kategorie-Id ("primary", "promotions", … oder eigene "custom-…"); nur für INBOX-Nachrichten gesetzt.</summary>
+    public string? CategoryId { get; set; }
+
+    /// <summary>Eingebaute Kategorie, falls <see cref="CategoryId"/> eine ist.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public MessageCategory? BuiltInCategory => MessageCategories.TryParse(CategoryId, out var c) ? c : null;
     public string Preview { get; init; } = "";
 
+    /// <summary>Alle Empfänger (An und Cc).</summary>
+    public IReadOnlyList<MailAddress> Recipients { get; init; } = Array.Empty<MailAddress>();
+    /// <summary>Message-ID ohne spitze Klammern.</summary>
+    public string? MessageId { get; init; }
+    public string? InReplyTo { get; init; }
+    public IReadOnlyList<string> References { get; init; } = Array.Empty<string>();
+    /// <summary>Header List-Unsubscribe (roh).</summary>
+    public string? ListUnsubscribe { get; init; }
+    /// <summary>Header List-Unsubscribe-Post (roh).</summary>
+    public string? ListUnsubscribePost { get; init; }
+
+    [JsonIgnore]
     public string FromDisplay => string.IsNullOrWhiteSpace(FromName) ? FromAddress : FromName;
 
     /// <summary>Eindeutiger Schlüssel über Konten und Ordner hinweg.</summary>
+    [JsonIgnore]
     public string Key => $"{AccountId}|{FolderPath}|{Uid}";
 }
 
@@ -39,6 +59,7 @@ public sealed class AttachmentInfo
     public string FileName { get; init; } = "";
     public string ContentType { get; init; } = "application/octet-stream";
     public byte[] Content { get; init; } = Array.Empty<byte>();
+    [JsonIgnore]
     public long Size => Content.LongLength;
 }
 
@@ -65,6 +86,9 @@ public sealed class MessageDetail
     /// <summary>Content-ID (ohne spitze Klammern) → Ressource.</summary>
     public IReadOnlyDictionary<string, InlineResource> InlineResources { get; init; } =
         new Dictionary<string, InlineResource>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Header List-Unsubscribe / List-Unsubscribe-Post.</summary>
+    public string? ListUnsubscribe { get; init; }
+    public string? ListUnsubscribePost { get; init; }
 }
 
 /// <summary>Eine zu sendende Nachricht (Klartext).</summary>
@@ -78,4 +102,13 @@ public sealed class OutgoingMessage
     public string Body { get; set; } = "";
     public string? InReplyTo { get; set; }
     public List<string> References { get; set; } = new();
+    /// <summary>Anhänge (Weiterleiten übernimmt die der Originalnachricht).</summary>
+    public List<AttachmentInfo> Attachments { get; set; } = new();
+
+    /// <summary>Gesamtgröße der Anhänge in Byte.</summary>
+    [JsonIgnore]
+    public long AttachmentBytes => Attachments.Sum(a => a.Size);
+
+    /// <summary>Hinweis ab 20 MB Gesamtgröße.</summary>
+    public const long LargeAttachmentThreshold = 20L * 1024 * 1024;
 }

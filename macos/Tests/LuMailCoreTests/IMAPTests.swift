@@ -126,6 +126,53 @@ final class IMAPClientTests: XCTestCase {
         XCTAssertEqual(transport.sentLines.last, "\r\n")
     }
 
+    func testStatusSearchAndStartTLS() async throws {
+        final class TLSRecorder: @unchecked Sendable { var started = false }
+        let recorder = TLSRecorder()
+        let transport = ScriptedTransport(greeting: "* OK [CAPABILITY IMAP4rev1 STARTTLS] ready\r\n") { command in
+            switch true {
+            case command.hasPrefix("STARTTLS"): return "{tag} OK Begin TLS\r\n"
+            case command.hasPrefix("CAPABILITY"): return "* CAPABILITY IMAP4rev1 IDLE AUTH=PLAIN\r\n{tag} OK\r\n"
+            case command.hasPrefix("STATUS"): return "* STATUS \"INBOX.Projekte\" (UNSEEN 4 MESSAGES 20)\r\n{tag} OK\r\n"
+            case command.hasPrefix("UID SEARCH"): return "* SEARCH 7 9\r\n{tag} OK\r\n"
+            default: return "{tag} OK\r\n"
+            }
+        }
+        transport.onStartTLS = { recorder.started = true }
+        let client = IMAPClient(transport: transport)
+        try await client.connect()
+        try await client.startTLS()
+        XCTAssertTrue(recorder.started)
+        XCTAssertTrue(client.supportsIdle)
+
+        let status = try await client.status("INBOX.Projekte")
+        XCTAssertEqual(status.unseen, 4)
+        XCTAssertEqual(status.messages, 20)
+
+        let ascii = try await client.searchText("rechnung", gmail: false)
+        XCTAssertEqual(ascii, [7, 9])
+        XCTAssertTrue(transport.sentLines.last?.contains(#"UID SEARCH OR OR FROM "rechnung" SUBJECT "rechnung" BODY "rechnung""#) == true)
+        _ = try await client.searchText("Привет", gmail: false)
+        XCTAssertTrue(transport.sentLines.contains { $0.contains("UID SEARCH CHARSET UTF-8 OR OR FROM {12}") })
+        _ = try await client.searchText("has:attachment rechnung", gmail: true)
+        XCTAssertTrue(transport.sentLines.last?.contains(#"UID SEARCH X-GM-RAW "has:attachment rechnung""#) == true)
+    }
+
+    func testIdleReportsChangesAndEndsWithDone() async throws {
+        let transport = ScriptedTransport(greeting: "* OK [CAPABILITY IMAP4rev1 IDLE] ready\r\n") { command in
+            if command.hasPrefix("IDLE") { return "+ idling\r\n* 5 EXISTS\r\n" }
+            if command == "DONE" { return "L0001 OK IDLE terminated\r\n" }
+            return "{tag} OK\r\n"
+        }
+        let client = IMAPClient(transport: transport)
+        try await client.connect()
+        final class Counter: @unchecked Sendable { var value = 0 }
+        let counter = Counter()
+        try await client.idle(timeout: 0.05) { counter.value += 1 }
+        XCTAssertEqual(counter.value, 1)
+        XCTAssertEqual(transport.sentLines.last, "DONE\r\n")
+    }
+
     func testMoveFallbackWithoutMoveCapability() async throws {
         let transport = ScriptedTransport(greeting: "* OK [CAPABILITY IMAP4rev1] ready\r\n") { _ in "{tag} OK\r\n" }
         let client = IMAPClient(transport: transport)
@@ -179,14 +226,14 @@ final class SessionTests: XCTestCase {
         let session = MailAccountSession(account: account, provider: gmail, transports: factory) {
             .password(user: "max@gmail.com", password: "app-pw")
         }
-        let messages = try await session.loadInbox(overrides: [:])
+        let messages = try await session.loadInbox(rules: RuleSet())
         let byUID = Dictionary(uniqueKeysWithValues: messages.map { ($0.uid, $0.category) })
         XCTAssertEqual(byUID[101], .primary)
         XCTAssertEqual(byUID[102], .promotions)
         XCTAssertEqual(byUID[103], .social)
 
         // Nutzer-Regel schlägt Server-Kategorie.
-        let overridden = try await session.loadInbox(overrides: ["shop.de": .primary])
+        let overridden = try await session.loadInbox(rules: RuleSet(senders: ["shop.de": .primary]))
         XCTAssertEqual(overridden.first { $0.uid == 102 }?.category, .primary)
     }
 }

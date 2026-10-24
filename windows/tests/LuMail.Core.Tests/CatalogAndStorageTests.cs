@@ -13,14 +13,17 @@ public class ProviderCatalogTests
     private static readonly ProviderCatalog Catalog = ProviderCatalog.LoadEmbedded();
 
     [Fact]
-    public void LoadsAllFourProvidersInOrder()
+    public void LoadsAllProvidersInOrder()
     {
-        Assert.Equal(new[] { "gmail", "proton", "mailru", "hostinger" }, Catalog.Providers.Select(p => p.Id));
+        Assert.Equal(new[] { "gmail", "outlook", "icloud", "proton", "mailru", "yandex", "gmx", "webde", "hostinger", "custom" },
+            Catalog.Providers.Select(p => p.Id));
         Assert.All(Catalog.Providers, p =>
         {
             Assert.False(string.IsNullOrEmpty(p.Name));
             Assert.Matches("^#[0-9A-Fa-f]{6}$", p.Color);
-            Assert.False(string.IsNullOrEmpty(p.Imap.Host));
+            Assert.Equal(p.CustomServers, string.IsNullOrEmpty(p.Imap.Host)); // nur „Andere (IMAP)“ ohne festen Server
+            Assert.Contains(p.Imap.Security, new[] { "tls", "starttls" });
+            Assert.Contains(p.Smtp.Security, new[] { "tls", "starttls" });
             Assert.True(p.Imap.Port > 0 && p.Smtp.Port > 0);
             Assert.NotEmpty(p.AuthMethods);
             Assert.False(string.IsNullOrEmpty(p.PasswordHelp));
@@ -47,6 +50,13 @@ public class ProviderCatalogTests
         Assert.Equal("https://oauth.mail.ru/userinfo", mailru.OAuth.UserInfoEndpoint);
 
         Assert.True(Catalog.Get("hostinger").SaveSentViaImap);
+        Assert.True(Catalog.Get("custom").CustomServers);
+        Assert.Equal(new[] { "custom" }, Catalog.Providers.Where(p => p.CustomServers).Select(p => p.Id));
+        var outlook = Catalog.Get("outlook");
+        Assert.Equal(new[] { "oauth2" }, outlook.AuthMethods);
+        Assert.Equal("idToken", outlook.OAuth!.EmailSource);
+        Assert.Equal("starttls", Catalog.Get("icloud").Smtp.Security);
+        Assert.Equal(587, Catalog.Get("icloud").Smtp.Port);
         Assert.Equal(6, Catalog.FolderRoles.Count);
     }
 
@@ -201,19 +211,35 @@ public class StorageTests : IDisposable
     }
 
     [Fact]
-    public void SenderRuleStore_PersistsFlatObject_AndReadsAlternativeFormats()
+    public void RuleStore_WritesVersion2_AndReadsLegacyFormats()
     {
         var path = Path.Combine(_dir, "rules.json");
-        var store = new SenderRuleStore(path);
-        store.Set("News@Shop.de", MessageCategory.Promotions);
-        Assert.Contains("\"news@shop.de\": \"promotions\"", File.ReadAllText(path));
-        Assert.Equal(MessageCategory.Promotions, new SenderRuleStore(path).Lookup("news@shop.de"));
-        Assert.True(store.Remove("news@shop.de"));
-        Assert.Null(new SenderRuleStore(path).Lookup("news@shop.de"));
+        var store = new RuleStore(path);
+        store.SetSender("News@Shop.de", MessageCategory.Promotions);
+        var cat = store.AddCategory("Rechnungen", "#22C55E", "doc.text");
+        store.AddRule(new ContentRule { Field = "subject", Contains = "rechnung", Category = cat.Id });
+        var json = File.ReadAllText(path);
+        Assert.Contains("\"version\": 2", json);
+        Assert.Contains("\"news@shop.de\": \"promotions\"", json);
+        Assert.Contains("\"customCategories\"", json);
 
-        Assert.Equal(MessageCategory.Social, SenderRuleStore.Parse("""{"rules":{"x.org":"social"}}""")["x.org"]);
-        Assert.Equal(MessageCategory.Updates, SenderRuleStore.Parse("""[{"sender":"a@b.de","category":"updates"}]""")["a@b.de"]);
-        Assert.Empty(SenderRuleStore.Parse("kaputt"));
+        var reloaded = new RuleStore(path);
+        Assert.Equal("promotions", reloaded.LookupSender("news@shop.de"));
+        Assert.Null(reloaded.LookupSender("info@mail.shop.de")); // Adress-Regel gilt nicht für die Domain
+        Assert.Equal(cat.Id, reloaded.MatchRule(null, null, null, "Ihre RECHNUNG"));
+        Assert.Equal("Rechnungen", reloaded.FindCategory(cat.Id)!.Name);
+        Assert.True(reloaded.RemoveSender("news@shop.de"));
+        Assert.Null(new RuleStore(path).LookupSender("news@shop.de"));
+
+        // Alte flache Form → senders
+        Assert.Equal("social", RuleStore.Parse("""{"x.org":"social","a@b.de":"promotions"}""").Senders["x.org"]);
+        Assert.Equal("social", RuleStore.Parse("""{"rules":{"x.org":"social"}}""").Senders["x.org"]);
+        Assert.Equal("updates", RuleStore.Parse("""[{"sender":"a@b.de","category":"updates"}]""").Senders["a@b.de"]);
+        Assert.Empty(RuleStore.Parse("kaputt").Senders);
+        var v2 = RuleStore.Parse("""{"version":2,"senders":{"firma.de":"primary"},"rules":[{"field":"from","contains":"chef","category":"primary"}],"customCategories":[{"id":"custom-x","name":"X","color":"#000000","icon":"tag"}]}""");
+        Assert.Equal("primary", v2.Senders["firma.de"]);
+        Assert.Equal("from", v2.Rules.Single().Field);
+        Assert.Equal("custom-x", v2.CustomCategories.Single().Id);
     }
 
     [Fact]

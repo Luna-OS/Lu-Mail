@@ -8,7 +8,7 @@
     mc:Ignorable="d"
     Background="{ThemeResource LuSurface}">
 
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" AllowDrop="True" DragOver="OnDragOver" Drop="OnDrop">
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="Enter" Modifiers="Control" Invoked="OnSendAccelerator" />
         </Grid.KeyboardAccelerators>
@@ -16,6 +16,7 @@
             <RowDefinition Height="40" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -37,20 +38,26 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" VerticalAlignment="Center" Foreground="{ThemeResource LuTextSecondary}" Text="Von" />
-            <ComboBox x:Name="FromBox" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" />
+            <ComboBox x:Name="FromBox" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnFromChanged" />
 
             <TextBlock Grid.Row="1" VerticalAlignment="Center" Foreground="{ThemeResource LuTextSecondary}" Text="An" />
-            <TextBox x:Name="ToBox" Grid.Row="1" Grid.Column="1" InputScope="EmailSmtpAddress"
-                     PlaceholderText="empfaenger@beispiel.de, weitere@beispiel.de" />
+            <AutoSuggestBox x:Name="ToBox" Grid.Row="1" Grid.Column="1" PlaceholderText="empfaenger@beispiel.de, weitere@beispiel.de"
+                            SuggestionChosen="OnAddressSuggestionChosen" TextChanged="OnAddressTextChanged" UpdateTextOnSelect="False" />
 
             <TextBlock Grid.Row="2" VerticalAlignment="Center" Foreground="{ThemeResource LuTextSecondary}" Text="Cc" />
-            <TextBox x:Name="CcBox" Grid.Row="2" Grid.Column="1" InputScope="EmailSmtpAddress" />
+            <AutoSuggestBox x:Name="CcBox" Grid.Row="2" Grid.Column="1"
+                            SuggestionChosen="OnAddressSuggestionChosen" TextChanged="OnAddressTextChanged" UpdateTextOnSelect="False" />
 
-            <TextBlock Grid.Row="3" VerticalAlignment="Center" Foreground="{ThemeResource LuTextSecondary}" Text="Betreff" />
-            <TextBox x:Name="SubjectBox" Grid.Row="3" Grid.Column="1" TextChanged="OnSubjectChanged" />
+            <TextBlock Grid.Row="3" VerticalAlignment="Center" Foreground="{ThemeResource LuTextSecondary}" Text="Bcc" />
+            <AutoSuggestBox x:Name="BccBox" Grid.Row="3" Grid.Column="1"
+                            SuggestionChosen="OnAddressSuggestionChosen" TextChanged="OnAddressTextChanged" UpdateTextOnSelect="False" />
+
+            <TextBlock Grid.Row="4" VerticalAlignment="Center" Foreground="{ThemeResource LuTextSecondary}" Text="Betreff" />
+            <TextBox x:Name="SubjectBox" Grid.Row="4" Grid.Column="1" TextChanged="OnSubjectChanged" />
         </Grid>
 
         <TextBox x:Name="BodyBox" Grid.Row="2" Margin="20,4,20,8" AcceptsReturn="True"
@@ -58,15 +65,33 @@
                  PlaceholderText="Nachricht schreiben…" ScrollViewer.VerticalScrollBarVisibility="Auto"
                  TextWrapping="Wrap" />
 
-        <Grid Grid.Row="3" Padding="20,8,20,16" ColumnSpacing="12">
+        <!-- Anhänge -->
+        <StackPanel Grid.Row="3" Margin="20,0,20,4" Spacing="4">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
+                          VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled">
+                <StackPanel x:Name="AttachmentsPanel" Orientation="Horizontal" Spacing="8" />
+            </ScrollViewer>
+            <TextBlock x:Name="AttachmentHint" FontSize="12" Foreground="{ThemeResource LuDanger}" TextWrapping="Wrap" Visibility="Collapsed" />
+        </StackPanel>
+
+        <Grid Grid.Row="4" Padding="20,8,20,16" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{ThemeResource LuDanger}" TextWrapping="Wrap" />
-            <ProgressRing x:Name="SendingRing" Grid.Column="1" Width="20" Height="20" IsActive="False" />
-            <Button x:Name="SendButton" Grid.Column="2" Click="OnSendClick" Style="{StaticResource AccentButtonStyle}"
+            <Button Click="OnAddAttachmentClick" ToolTipService.ToolTip="Dateien anhängen (auch per Drag &amp; Drop)">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="14" Glyph="&#xE723;" />
+                    <TextBlock Text="Anhang" />
+                </StackPanel>
+            </Button>
+            <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center" Foreground="{ThemeResource LuDanger}" TextWrapping="Wrap" />
+            <ProgressRing x:Name="SendingRing" Grid.Column="2" Width="20" Height="20" IsActive="False" />
+            <Button x:Name="ScheduleButton" Grid.Column="3" Click="OnScheduleClick" Content="Später senden …" />
+            <Button x:Name="SendButton" Grid.Column="4" Click="OnSendClick" Style="{StaticResource AccentButtonStyle}"
                     ToolTipService.ToolTip="Senden (Strg+Eingabe)">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon FontSize="14" Glyph="&#xE724;" />
