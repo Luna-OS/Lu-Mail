@@ -30,6 +30,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly HashSet<string> _refreshingAccounts = new();
     private List<MessageItem> _all = new();
     private List<MessageItem> _serverResults = new();
+    /// <summary>Wieder aufgetauchte Erinnerungen: Schlüssel → Zeitpunkt (werden oben einsortiert).</summary>
+    private readonly Dictionary<string, DateTimeOffset> _resurfaced = new();
     private int _loadVersion;
     private int _busy;
     private bool _refreshing;
@@ -595,12 +597,16 @@ public sealed class MainViewModel : ObservableObject
 
     private void SetList(List<MessageItem> list)
     {
-        var flat = list.Where(m => !m.IsHeader).OrderByDescending(m => m.Summary.Date).ToList();
+        var flat = list.Where(m => !m.IsHeader).OrderByDescending(SortDate).ToList();
         _all = _s.Settings.Conversations && Selected?.Target is not (SidebarTarget.Reminders or SidebarTarget.Scheduled)
             ? GroupConversations(flat)
             : flat;
         ApplyFilter();
     }
+
+    /// <summary>Sortierdatum: Erinnerungen erscheinen nach dem Wiederauftauchen oben.</summary>
+    private DateTimeOffset SortDate(MessageItem m) =>
+        _resurfaced.TryGetValue(m.Key, out var at) && at > m.Summary.Date ? at : m.Summary.Date;
 
     /// <summary>§8: Konversationen – Eintrag = neueste Nachricht, mit Anzahl und Teilnehmern.</summary>
     private static List<MessageItem> GroupConversations(List<MessageItem> flat)
@@ -893,6 +899,7 @@ public sealed class MainViewModel : ObservableObject
             if (item is not null)
             {
                 ApplySeen(item, false);
+                _resurfaced[item.Key] = now;
                 ReminderDue?.Invoke(this, item);
             }
             refreshed.Add(account.Id);

@@ -50,6 +50,18 @@ public sealed partial class AddAccountDialog : ContentDialog
         }
 
         var provider = tile.Provider;
+        if (provider.SupportsOAuth && !tile.OAuthAvailable && !provider.SupportsPassword)
+        {
+            HintBar.Severity = InfoBarSeverity.Warning;
+            HintBar.Title = "Eigene OAuth-Client-ID nötig";
+            HintBar.Message =
+                $"{provider.Name} erlaubt E-Mail-Programmen nur die Anmeldung über OAuth. Trage deine eigene Client-ID für „{provider.Id}“ " +
+                $"in {App.Services.Paths.OAuthFile} ein (Vorlage: shared/oauth.example.json) und öffne diesen Dialog erneut.";
+            HintBar.IsOpen = true;
+            LoginButton.IsEnabled = false;
+            return;
+        }
+        HintBar.Severity = InfoBarSeverity.Informational;
         if (provider.SupportsOAuth && !tile.OAuthAvailable)
         {
             HintBar.Title = "OAuth nicht eingerichtet";

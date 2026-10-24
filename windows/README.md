@@ -96,6 +96,26 @@ Proton funktioniert nur über die **Proton Mail Bridge**. In der Bridge unter
 `127.0.0.1:1143` (IMAP) und `127.0.0.1:1025` (SMTP) und akzeptiert das selbstsignierte Bridge-Zertifikat
 **nur** für Loopback-Adressen.
 
+## Funktionen (docs/FUNKTIONEN.md)
+
+- **Push** per IMAP IDLE (zweite Verbindung pro Konto, alle 25 min erneuert, Neuverbindung 30 s … 10 min),
+  sonst Abruf im eingestellten Intervall.
+- **Mitteilungen** für neue Mails in Posteingang/Updates, Zähler im **Infobereich** (Tooltip, Menü mit den 5 neuesten
+  ungelesenen Mails) und als **Taskleisten-Overlay**.
+- **Offline-Cache** (`cache/`): Start sofort aus dem Cache, geöffnete Nachrichten offline lesbar (max. 200 MB).
+- **Serversuche** mit Enter im Suchfeld (Gmail `X-GM-RAW`, sonst FROM/SUBJECT/BODY), höchstens 50 Treffer je Konto.
+- **Verfassen** mit Anhängen (Button oder Drag & Drop), Signatur pro Konto, Kontakt-Vorschlägen in An/Cc/Bcc und
+  „Später senden …“ (`outbox/`).
+- **Mehrfachauswahl** (Strg/Shift-Klick, Strg+A) und Tastenkürzel `j k e # ! r a f s u c /`.
+- **Ungelesen-Zähler** für alle Ordner (STATUS), **Konversationen**, **„Alle <Anbieter>-Posteingänge“**.
+- **Eigene Regeln und Kategorien** (`rules.json` Version 2) unter Einstellungen → Regeln.
+- **Newsletter abbestellen** (RFC 8058 One-Click, mailto oder Browser), **automatisches Aufräumen** je Kategorie.
+- **Später erinnern** (`snoozed.json`) mit Übersicht „Erinnerungen“, Übersicht „Geplant“.
+- **Tracking-Bericht**, **Phishing-Warnung**, **App-Sperre mit Windows Hello**.
+- Anbieter: Gmail, Outlook (nur OAuth), iCloud, Proton (Bridge), Mail.ru, Yandex, GMX, WEB.DE, Hostinger und
+  **Andere (IMAP)** mit eigenen Servern.
+- **Darstellung**: Modus System/Hell/Dunkel, Varianten Luna/Neumond/Vollmond, sechs Akzentfarben.
+
 ## Bedienung
 
 | Aktion | Tastatur / Ort |
@@ -138,8 +158,12 @@ Installer bauen: `pwsh windows/installer/build-installer.ps1 -Arch x64 -Version 
 | Was | Ort |
 |-----|-----|
 | Kontenliste (ohne Geheimnisse) | `%APPDATA%\LuMail\accounts.json` |
-| Absender-Regeln | `%APPDATA%\LuMail\rules.json` (`{ "absender@domain": "promotions" }`) |
+| Regeln und eigene Kategorien | `%APPDATA%\LuMail\rules.json` (Version 2: `senders`, `rules`, `customCategories`) |
 | OAuth-Client-IDs | `%APPDATA%\LuMail\oauth.json` |
 | Passwörter / Refresh-Tokens | `%APPDATA%\LuMail\secrets.bin` (DPAPI, nur aktueller Windows-Benutzer) |
 | App-Einstellungen | `%APPDATA%\LuMail\settings.json` |
+| Kontakte | `%APPDATA%\LuMail\contacts.json` |
+| Erinnerungen | `%APPDATA%\LuMail\snoozed.json` |
+| Geplante Nachrichten | `%APPDATA%\LuMail\outbox\<id>.eml` + `<id>.json` |
+| Offline-Cache | `%APPDATA%\LuMail\cache\<Konto-ID>.json`, `cache\<Konto-ID>\<Ordner-Hash>\<UID>.eml` |
 | WebView2-Daten | `%LOCALAPPDATA%\LuMail\WebView2` |

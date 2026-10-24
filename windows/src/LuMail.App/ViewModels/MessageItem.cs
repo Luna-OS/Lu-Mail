@@ -154,5 +154,7 @@ public sealed class ProviderTile
     public string Name => Provider.Name;
     public SolidColorBrush Brush => BrushCache.ForProvider(Provider);
     public string Initial => Provider.Name.Length > 0 ? Provider.Name[..1] : "?";
-    public string MethodText => OAuthAvailable ? "Anmeldung über OAuth" : Provider.PasswordLabel;
+    public string MethodText => OAuthAvailable ? "Anmeldung über OAuth"
+        : Provider.SupportsPassword ? Provider.PasswordLabel
+        : "OAuth-Client-ID nötig";
 }

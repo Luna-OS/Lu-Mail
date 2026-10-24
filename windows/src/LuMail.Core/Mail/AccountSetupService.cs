@@ -50,8 +50,10 @@ public sealed class AccountSetupService
             return account;
         }
 
-        if (!provider.SupportsPassword && !provider.SupportsOAuth)
-            throw new MailServiceException($"{provider.Name} unterstützt keine Anmeldeart.");
+        if (!provider.SupportsPassword)
+            throw new MailServiceException(provider.SupportsOAuth
+                ? $"{provider.Name} unterstützt nur OAuth. Bitte eine eigene Client-ID für „{provider.Id}“ in oauth.json eintragen."
+                : $"{provider.Name} unterstützt keine Anmeldeart.");
 
         var password = await _login.LoginWithPasswordAsync(provider, hint,
             (email, pw, servers, token) => _mail.VerifyPasswordAsync(provider, email, pw, servers, token), ct).ConfigureAwait(false);

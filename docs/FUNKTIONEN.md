@@ -2,6 +2,9 @@
 
 Ergänzt [ARCHITEKTUR.md](ARCHITEKTUR.md). Beide Apps setzen jede Funktion gleich um; gemeinsame Daten liegen
 in `shared/`, App-Daten im App-Datenordner (`~/Library/Application Support/LuMail/` bzw. `%APPDATA%\LuMail\`).
+Rein lokale Dateien (Offline-Cache, Postausgang) werden nie zwischen den Plattformen ausgetauscht; ihr genaues
+internes Format darf sich je App unterscheiden. `rules.json`, `accounts.json`, `contacts.json` und `snoozed.json`
+folgen dem hier beschriebenen Format.
 
 ## 1. Push für neue Mails (IMAP IDLE)
 - Pro Konto eine **zweite** IMAP-Verbindung: `SELECT INBOX`, dann `IDLE` (RFC 2177), wenn der Server `IDLE` kann.
