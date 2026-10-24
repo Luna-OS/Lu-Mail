@@ -11,9 +11,6 @@ public partial class App : Application
     /// <summary>Gemeinsame Dienste (Composition Root).</summary>
     public static AppServices Services { get; private set; } = null!;
 
-    /// <summary>Das Hauptfenster (für Dialoge und neue Fenster).</summary>
-    public static MainWindow? Main => (Current as App)?._window;
-
     public App()
     {
         // WebView2 legt sonst seinen Datenordner neben der .exe an (evtl. schreibgeschützt).

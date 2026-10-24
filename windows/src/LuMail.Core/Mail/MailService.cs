@@ -158,6 +158,7 @@ public sealed class MailService : IAsyncDisposable
         {
             var inbox = InboxOf(client);
             await OpenAsync(inbox, token).ConfigureAwait(false);
+            await client.NoOpAsync(token).ConfigureAwait(false); // neue EXISTS-Antworten abholen, falls der Ordner schon offen war
             var summaries = await FetchNewestAsync(inbox, _options.InboxFetchCount, withHeaders: true, token).ConfigureAwait(false);
             if (summaries.Count == 0) return Array.Empty<MessageSummary>();
 
@@ -215,6 +216,7 @@ public sealed class MailService : IAsyncDisposable
         {
             var folder = await GetFolderAsync(client, folderPath, token).ConfigureAwait(false);
             await OpenAsync(folder, token).ConfigureAwait(false);
+            await client.NoOpAsync(token).ConfigureAwait(false);
             var summaries = await FetchNewestAsync(folder, _options.FolderFetchCount, withHeaders: false, token).ConfigureAwait(false);
             return summaries.Select(s => ToModel(account.Id, folder.FullName, s)).OrderByDescending(m => m.Date).ToList();
         }, ct);

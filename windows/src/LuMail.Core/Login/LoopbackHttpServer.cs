@@ -50,6 +50,7 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
     private readonly HashSet<Task> _inflight = new();
     private readonly object _gate = new();
     private int _disposed;
+    private volatile bool _stopped;
 
     public int Port { get; }
     public bool ListensOnIPv6 => _v6 is not null;
@@ -121,7 +122,7 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
 
     private async Task AcceptLoopAsync(TcpListener listener)
     {
-        while (!_cts.IsCancellationRequested)
+        while (!_stopped)
         {
             TcpClient client;
             try
@@ -130,9 +131,10 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
             }
             catch (OperationCanceledException) { break; }
             catch (ObjectDisposedException) { break; }
+            catch (InvalidOperationException) { break; }
             catch (SocketException)
             {
-                if (_cts.IsCancellationRequested) break;
+                if (_stopped) break;
                 continue;
             }
             Track(HandleClientAsync(client));
@@ -310,6 +312,7 @@ public sealed class LoopbackHttpServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1) return;
+        _stopped = true;
         try { _v4.Stop(); } catch (SocketException) { }
         try { _v6?.Stop(); } catch (SocketException) { }
 
