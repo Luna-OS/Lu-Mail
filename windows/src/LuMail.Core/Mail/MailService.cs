@@ -367,7 +367,7 @@ public sealed class MailService : IAsyncDisposable
         }, ct);
     }
 
-    internal static MessageDetail ToDetail(string accountId, string folderPath, uint uid, MimeMessage message)
+    public static MessageDetail ToDetail(string accountId, string folderPath, uint uid, MimeMessage message)
     {
         var attachments = new List<AttachmentInfo>();
         foreach (var entity in message.Attachments)
