@@ -10,6 +10,8 @@ public sealed class Account
 {
     public const string AuthOAuth2 = "oauth2";
     public const string AuthPassword = "password";
+    /// <summary>Web-Konto: Anmeldung auf der Anbieter-Webseite, Webmail eingebettet (FUNKTIONEN §20).</summary>
+    public const string AuthWeb = "web";
 
     public string Id { get; set; } = Guid.NewGuid().ToString().ToUpperInvariant();
     public string ProviderId { get; set; } = "";
@@ -33,6 +35,10 @@ public sealed class Account
     /// <summary>SMTP-Server dieses Kontos.</summary>
     public ServerEndpoint SmtpFor(Provider provider) =>
         provider.CustomServers && CustomServers?.Smtp is { Host.Length: > 0 } smtp ? smtp : provider.Smtp;
+
+    /// <summary>Web-Konto – wird von allem, was IMAP/SMTP betrifft, übersprungen.</summary>
+    [JsonIgnore]
+    public bool IsWeb => string.Equals(AuthMethod, AuthWeb, StringComparison.OrdinalIgnoreCase);
 
     [JsonIgnore]
     public bool IsOAuth => string.Equals(AuthMethod, AuthOAuth2, StringComparison.OrdinalIgnoreCase);

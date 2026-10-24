@@ -119,6 +119,9 @@ final class AuthService: @unchecked Sendable {
                 tokens = try await refreshTokens(for: account, provider: provider, current: tokens)
             }
             return .oauth(user: account.email, accessToken: tokens.accessToken)
+        case .web:
+            // Web-Konten melden sich nur auf der Webseite an (§20) – es gibt keine IMAP-Zugangsdaten.
+            throw UserFacingError("Web-Konten haben keine IMAP-Verbindung.")
         }
     }
 

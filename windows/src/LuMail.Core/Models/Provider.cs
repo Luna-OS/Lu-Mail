@@ -36,6 +36,12 @@ public sealed class Provider
     /// <summary>MX-Host-Endungen für die Anbieter-Erkennung (z. B. Google Workspace → "google.com").</summary>
     public List<string> MxSuffixes { get; set; } = new();
 
+    /// <summary>Webmail-Daten für Web-Konten (FUNKTIONEN §20), null bei „Andere (IMAP)“.</summary>
+    public WebConfig? Web { get; set; }
+
+    [JsonIgnore]
+    public bool SupportsWeb => Web is not null && AuthMethods.Contains(Account.AuthWeb, StringComparer.OrdinalIgnoreCase);
+
     /// <summary>„So geht's“-Schritte und lokale Portprüfung für den Assistenten.</summary>
     public ProviderSetup Setup { get; set; } = new();
 
@@ -72,6 +78,17 @@ public sealed class OAuthSettings
     /// <summary>"idToken" oder "userInfo".</summary>
     public string EmailSource { get; set; } = "idToken";
     public string? AppRegistrationUrl { get; set; }
+}
+
+/// <summary><c>providers.json → web</c>.</summary>
+public sealed class WebConfig
+{
+    public string LoginUrl { get; set; } = "";
+    public string HomeUrl { get; set; } = "";
+    public List<string> LoggedInPrefixes { get; set; } = new();
+    /// <summary>Ordner-Schlüssel (primary, promotions, social, updates, forums, sent, drafts, archive, spam, trash) → URL.</summary>
+    public Dictionary<string, string> Folders { get; set; } = new();
+    public string? UnreadTitlePattern { get; set; }
 }
 
 /// <summary><c>providers.json → setup</c>.</summary>
@@ -118,4 +135,6 @@ public sealed class ProviderCatalogDocument
     public List<Provider> Providers { get; set; } = new();
     public Dictionary<string, FolderRoleDefinition> FolderRoles { get; set; } = new();
     public DiscoverySettings Discovery { get; set; } = new();
+    /// <summary>Nur macOS (WKWebView); Windows nutzt den Standard-User-Agent von WebView2.</summary>
+    public Dictionary<string, string> WebUserAgent { get; set; } = new();
 }

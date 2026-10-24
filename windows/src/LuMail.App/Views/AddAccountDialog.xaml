@@ -36,6 +36,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
@@ -51,7 +52,14 @@
                     <TextBlock x:Name="ProviderEmailText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </Grid>
-            <StackPanel Grid.Row="1" Spacing="6">
+            <!-- Web-Anmeldung (Standard, §20) -->
+            <StackPanel x:Name="WebModePanel" Grid.Row="1" Padding="12,10,12,12" Background="{ThemeResource LuSurfaceHover}"
+                        CornerRadius="{StaticResource LuRadiusMedium}" Spacing="6" Visibility="Collapsed">
+                <TextBlock FontSize="14" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" TextWrapping="Wrap"
+                           Text="Ganz normal mit deinem Passwort – kein App-Passwort, keine Bridge nötig." />
+                <TextBlock x:Name="WebModeDetail" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel x:Name="GuidePanel" Grid.Row="1" Spacing="6">
                 <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="So geht's" />
                 <ScrollViewer MaxHeight="230" VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="StepsPanel" Padding="0,0,8,0" Spacing="10" />
@@ -68,6 +76,7 @@
             </Grid>
             <TextBlock x:Name="ServersText" Grid.Row="3" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" Visibility="Collapsed" />
             <InfoBar x:Name="HintBar" Grid.Row="4" IsClosable="False" IsOpen="False" Severity="Informational" />
+            <HyperlinkButton x:Name="ModeLink" Grid.Row="5" Padding="0,2,0,2" Click="OnModeLinkClick" FontSize="12" Visibility="Collapsed" />
         </Grid>
 
         <!-- ===== Warten auf den Browser ===== -->

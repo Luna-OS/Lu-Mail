@@ -9,8 +9,9 @@ Ein nativer E-Mail-Client für **macOS** (Swift/SwiftUI) und **Windows** (C#/Win
   **Posteingang · Werbung · Soziale Netzwerke · Updates · Foren** plus Gesendet, Entwürfe, Archiv, Spam,
   Papierkorb und alle eigenen Ordner vom Server.
 - **Übersicht:** Alle Posteingänge, Ungelesen und Markiert über alle Konten hinweg.
-- **Anmeldung immer im Browser:** Gmail und Mail.ru direkt über deren Anmeldeseite (OAuth 2.0 mit PKCE),
-  Proton Mail und Hostinger über eine lokale Lu-Mail-Anmeldeseite – siehe [docs/ANMELDUNG.md](docs/ANMELDUNG.md).
+- **Anmeldung auf der echten Anbieter-Seite:** „Bei Gmail/Proton/Mail.ru … anmelden“ öffnet die Webseite des
+  Anbieters – normales Passwort, kein App-Passwort, keine Bridge (Web-Konto). Wer lieber IMAP nutzt, findet das
+  unter „Erweitert“ (Anmeldung im Standardbrowser) – siehe [docs/ANMELDUNG.md](docs/ANMELDUNG.md).
 - **Automatische Sortierung:** Gmail liefert die Kategorien selbst, für alle anderen sortiert Lu-Mail nach
   denselben Regeln ([shared/categories.json](shared/categories.json)). Per Rechtsklick „Absender immer als …
   einsortieren“.

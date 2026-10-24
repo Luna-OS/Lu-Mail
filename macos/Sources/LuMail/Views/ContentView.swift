@@ -11,11 +11,17 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 360)
-        } content: {
-            MessageListView()
-                .navigationSplitViewColumnWidth(min: 300, ideal: 400, max: 560)
         } detail: {
-            MessageDetailView()
+            if case .web(let accountId, let folder) = model.selection, let account = model.account(id: accountId) {
+                WebMailView(account: account, folder: folder)
+            } else {
+                HSplitView {
+                    MessageListView()
+                        .frame(minWidth: 300, idealWidth: 400, maxWidth: 560)
+                    MessageDetailView()
+                        .frame(minWidth: 380, maxWidth: .infinity)
+                }
+            }
         }
         .id(theme.revision)
         .background(LuTheme.background)

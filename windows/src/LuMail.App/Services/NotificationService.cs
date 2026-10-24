@@ -49,6 +49,23 @@ public sealed class NotificationService
         }
     }
 
+    /// <summary>Web-Konto: „&lt;Konto&gt;: N neue E-Mail(s)“ – Klick öffnet den Posteingang des Kontos.</summary>
+    public void ShowWebMail(LuMail.Core.Models.Account account, int count)
+    {
+        if (!_registered || count <= 0) return;
+        try
+        {
+            var builder = new AppNotificationBuilder()
+                .AddArgument("action", "web")
+                .AddArgument("account", account.Id)
+                .AddText($"{account.Email}: {count} neue E-Mail{(count == 1 ? "" : "s")}");
+            AppNotificationManager.Default.Show(builder.BuildNotification());
+        }
+        catch (Exception)
+        {
+        }
+    }
+
     public void Unregister()
     {
         if (!_registered) return;

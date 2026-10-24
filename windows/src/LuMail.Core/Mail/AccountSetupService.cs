@@ -73,6 +73,25 @@ public sealed class AccountSetupService
     /// <summary>Wird nach dem Entfernen eines Kontos aufgerufen (z. B. Cache löschen).</summary>
     public event EventHandler<Account>? AccountRemoved;
 
+    /// <summary>
+    /// Web-Konto anlegen (FUNKTIONEN §20): keine Geheimnisse, nur das WebView-Profil mit den Cookies des Anbieters.
+    /// Ohne bekannte Adresse wird vorerst der Anbietername eingetragen (später aus dem Seitentitel ersetzt).
+    /// </summary>
+    public Account AddWebAccount(Provider provider, string accountId, string? email)
+    {
+        var address = string.IsNullOrWhiteSpace(email) ? provider.Name : email.Trim();
+        var account = new Account
+        {
+            Id = accountId,
+            ProviderId = provider.Id,
+            Email = address,
+            DisplayName = address.Contains('@') ? DefaultDisplayName(address) : provider.Name,
+            AuthMethod = Account.AuthWeb,
+        };
+        _accounts.Upsert(account);
+        return account;
+    }
+
     public async Task RemoveAccountAsync(Account account)
     {
         await _mail.ForgetAccountAsync(account.Id).ConfigureAwait(false);

@@ -21,6 +21,8 @@ public sealed partial class AddAccountDialog : ContentDialog
     private CustomServerSettings? _servers;
     private CancellationTokenSource? _cts;
     private bool _discovering;
+    /// <summary>„Erweitert: per IMAP verbinden“ gewählt (sonst Web-Anmeldung, wenn der Anbieter sie kann).</summary>
+    private bool _imapMode;
 
     /// <summary>Das neu hinzugefügte Konto (null = abgebrochen).</summary>
     public Account? AddedAccount { get; private set; }
@@ -71,7 +73,9 @@ public sealed partial class AddAccountDialog : ContentDialog
             ToolTipService.SetToolTip(button, provider.Name);
             button.Click += (s, _) =>
             {
-                if ((s as Button)?.Tag is Provider p) ShowProvider(p, null);
+                if ((s as Button)?.Tag is not Provider p) return;
+                _imapMode = false;
+                ShowProvider(p, null);
             };
             Grid.SetRow(button, i / columns);
             Grid.SetColumn(button, i % columns);
@@ -109,6 +113,7 @@ public sealed partial class AddAccountDialog : ContentDialog
         try
         {
             var result = await _s.Discovery.DiscoverAsync(Email, _cts.Token);
+            _imapMode = false;
             ShowProvider(result.Provider, result.Servers);
         }
         catch (OperationCanceledException)
@@ -124,14 +129,17 @@ public sealed partial class AddAccountDialog : ContentDialog
 
     // ------------------------------------------------------------ Schritt 2
 
+    /// <summary>Web-Anmeldung (§20) – Standard für alle Anbieter mit <c>web</c>.</summary>
+    private bool WebMode => _provider is { SupportsWeb: true } && !_imapMode;
     private bool OAuthAvailable => _provider is not null && _s.Setup.CanUseOAuth(_provider);
-    private bool OAuthOnlyWithoutClient => _provider is { SupportsPassword: false } && !OAuthAvailable;
+    private bool OAuthOnlyWithoutClient => !WebMode && _provider is { SupportsPassword: false } && !OAuthAvailable;
 
     private string LoginButtonText
     {
         get
         {
             if (_provider is null) return "Im Browser anmelden";
+            if (WebMode) return $"Bei {_provider.Name} anmelden";
             if (!OAuthAvailable && !OAuthOnlyWithoutClient) return "Im Browser anmelden";
             return _provider.Id switch
             {
@@ -155,8 +163,14 @@ public sealed partial class AddAccountDialog : ContentDialog
         ProviderEmailText.Visibility = EmailLooksValid ? Visibility.Visible : Visibility.Collapsed;
 
         BuildSteps(provider);
+        GuidePanel.Visibility = WebMode ? Visibility.Collapsed : Visibility.Visible;
+        WebModePanel.Visibility = WebMode ? Visibility.Visible : Visibility.Collapsed;
+        WebModeDetail.Text = $"Lu-Mail öffnet die echte Anmeldeseite von {provider.Name} in einem eigenen Fenster – auch mit " +
+                             "Bestätigung in zwei Schritten. Lu-Mail speichert kein Passwort, nur die Anmeldung (Cookies) dieses Kontos.";
+        ModeLink.Visibility = provider.SupportsWeb ? Visibility.Visible : Visibility.Collapsed;
+        ModeLink.Content = WebMode ? "Erweitert: per IMAP verbinden (App-Passwort/OAuth)" : "Einfacher: auf der Webseite anmelden";
 
-        ServersText.Visibility = provider.CustomServers ? Visibility.Visible : Visibility.Collapsed;
+        ServersText.Visibility = provider.CustomServers && !WebMode ? Visibility.Visible : Visibility.Collapsed;
         ServersText.Text = servers is null
             ? "Die Server trägst du auf der Anmeldeseite im Browser ein."
             : $"Gefundene Server: {Describe(servers.Imap)} (IMAP) · {Describe(servers.Smtp)} (SMTP) – auf der Anmeldeseite änderbar.";
@@ -171,8 +185,8 @@ public sealed partial class AddAccountDialog : ContentDialog
             HintBar.IsOpen = true;
         }
 
-        BridgePanel.Visibility = provider.Setup.CheckLocalPort is null ? Visibility.Collapsed : Visibility.Visible;
-        if (provider.Setup.CheckLocalPort is { } port) _ = CheckBridgeAsync(port);
+        BridgePanel.Visibility = provider.Setup.CheckLocalPort is null || WebMode ? Visibility.Collapsed : Visibility.Visible;
+        if (provider.Setup.CheckLocalPort is { } port && !WebMode) _ = CheckBridgeAsync(port);
 
         ShowStep(Step.Provider);
     }
@@ -242,9 +256,53 @@ public sealed partial class AddAccountDialog : ContentDialog
 
     // ------------------------------------------------------------ Anmelden
 
+    private void OnModeLinkClick(object sender, RoutedEventArgs e)
+    {
+        if (_provider is null) return;
+        _imapMode = !_imapMode;
+        ShowProvider(_provider, _servers);
+    }
+
+    /// <summary>§20: Anmeldung auf der Webseite in einem eigenen Fenster mit dem Profil des neuen Kontos.</summary>
+    private async Task WebLoginAsync(Provider provider)
+    {
+        var accountId = Guid.NewGuid().ToString().ToUpperInvariant();
+        _cts = new CancellationTokenSource();
+        WaitingDetail.Text = $"Melde dich im geöffneten Fenster bei {provider.Name} an. Sobald du dein Postfach siehst, geht es automatisch weiter (oder klicke dort auf „Fertig“).";
+        ShowStep(Step.Waiting);
+        var window = new WebLoginWindow(provider, accountId);
+        using var registration = _cts.Token.Register(window.Cancel);
+        window.Activate();
+        try
+        {
+            if (await window.Completion)
+            {
+                AddedAccount = _s.Setup.AddWebAccount(provider, accountId, EmailLooksValid ? Email : null);
+                SuccessText.Text = $"✓ {AddedAccount.Email} wurde hinzugefügt";
+                ShowStep(Step.Success);
+                await Task.Delay(1500);
+                Hide();
+            }
+            else if (_step == Step.Waiting)
+            {
+                ShowStep(Step.Provider);
+            }
+        }
+        finally
+        {
+            _cts?.Dispose();
+            _cts = null;
+        }
+    }
+
     private async Task LoginAsync()
     {
         if (_provider is null || OAuthOnlyWithoutClient) return;
+        if (WebMode)
+        {
+            await WebLoginAsync(_provider);
+            return;
+        }
         var provider = _provider;
         _cts = new CancellationTokenSource();
         WaitingDetail.Text = OAuthAvailable

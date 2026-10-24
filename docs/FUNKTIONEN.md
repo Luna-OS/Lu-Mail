@@ -175,3 +175,60 @@ GitHub-Secrets in die Apps ein: `LUMAIL_GOOGLE_CLIENT_ID`, `LUMAIL_GOOGLE_CLIENT
   Regeln, Datenschutz, Updates) – keine abgeschnittenen Reiter.
 - „Neue E-Mail“ ohne Konto öffnet „Konto hinzufügen“.
 - Hinweise nutzen die passende Art (Info/Erfolg/Warnung/Fehler), z. B. „Bitte zuerst ein Konto hinzufügen“ = Info.
+
+## 20. Web-Konten (Anmeldung auf der Anbieter-Webseite)
+
+Problem: Gmail verlangt für IMAP ein App-Passwort oder eine eigene OAuth-Client-ID, Proton Mail die kostenpflichtige
+Bridge, Mail.ru ein App-Passwort. Lösung: Ein **Web-Konto** meldet sich ganz normal auf der echten Webseite des
+Anbieters an (normales Passwort, 2FA, Captcha – alles wie im Browser) und zeigt das Webmail-Postfach direkt in Lu-Mail.
+Das ist ab sofort der **Standardweg** im Assistenten; IMAP bleibt als „Erweitert“ verfügbar.
+
+**Daten (`shared/providers.json`)**
+- `authMethods` enthält `"web"` (alle außer „Andere (IMAP)“). Neuer Wert für `Account.authMethod`: `web`.
+- Pro Anbieter `web`:
+  - `loginUrl` – Startseite der Anmeldung (passt nie zu `loggedInPrefixes`).
+  - `homeUrl` – Postfach nach der Anmeldung.
+  - `loggedInPrefixes` – erreicht die Adresse der Seite (auch per JavaScript/Hash-Navigation) einen dieser Anfänge,
+    gilt die Anmeldung als abgeschlossen. Leer (iCloud, Hostinger, …) = nur über den Button „Fertig“.
+  - `folders` – Webadresse je Ordner: Kategorien `primary`, `promotions`, `social`, `updates`, `forums` und Rollen
+    `sent`, `drafts`, `archive`, `spam`, `trash`. Fehlende Schlüssel werden in der Seitenleiste nicht angezeigt.
+  - `unreadTitlePattern` – regulärer Ausdruck, erste Gruppe = Anzahl ungelesener Mails im Seitentitel.
+- `webUserAgent.macos` – User-Agent für WKWebView (Safari-Kennung, sonst lehnen manche Anbieter die Anmeldung ab).
+  Windows nutzt den Standard-User-Agent von WebView2 (Edge).
+
+**Sitzungen**
+- Jedes Web-Konto hat einen **eigenen, dauerhaften Cookie-Speicher** (mehrere Gmail-Konten parallel möglich):
+  macOS `WKWebsiteDataStore(forIdentifier: account.id)`, Windows WebView2-Profil `account.id` (eigener Profilname,
+  gemeinsamer Benutzerdatenordner `%LOCALAPPDATA%\LuMail\WebView2`).
+- Es werden **keine Passwörter gespeichert** – nur die Cookies des Anbieters im Profil.
+- Konto entfernen löscht den Speicher bzw. das Profil.
+- Abgemeldet (z. B. Cookies abgelaufen)? Das Postfach zeigt einfach wieder die Anmeldeseite des Anbieters.
+
+**Assistent „Konto hinzufügen“ (§17, erweitert)**
+- Schritt 2 zeigt für Anbieter mit `web` als Hauptbutton **„Bei <Anbieter> anmelden“** und den Hinweis
+  „Ganz normal mit deinem Passwort – kein App-Passwort, keine Bridge nötig.“
+  Darunter ein kleiner Link „Erweitert: per IMAP verbinden (App-Passwort/OAuth)“, der die bisherige Anleitung zeigt.
+- Klick öffnet die Anmeldeseite (`loginUrl`) in einem großen Fenster/Schritt innerhalb von Lu-Mail mit eingebettetem
+  Browser, Kopfzeile „Melde dich bei <Anbieter> an“ plus „Abbrechen“ und „Fertig“.
+- Abgeschlossen, sobald die Adresse zu `loggedInPrefixes` passt oder „Fertig“ geklickt wird → Konto anlegen
+  (`authMethod = web`, E-Mail aus Schritt 1, sonst später aus dem Seitentitel, sonst Anbietername) und in der
+  Seitenleiste dessen Posteingang auswählen. Der eingebettete Browser wird dabei weiterverwendet (kein zweiter Login).
+- Abbrechen löscht den gerade angelegten Speicher.
+
+**Anzeige**
+- Seitenleiste: Anbieter → Konto → Einträge aus `folders` in der Reihenfolge Posteingang, Werbung, Soziale Netzwerke,
+  Updates, Foren, Gesendet, Entwürfe, Archiv, Spam, Papierkorb (Namen wie bei IMAP-Konten, Kategorien nur wenn
+  „Kategorien getrennt anzeigen“ an ist, sonst nur Posteingang + Rollen).
+- Auswahl eines Eintrags ersetzt Liste + Lesebereich durch das Webmail des Kontos, navigiert zur Ordneradresse.
+  Kleine Leiste darüber: Zurück, Vor, Neu laden, Kontoadresse.
+- Pro Web-Konto bleibt ein Browser im Hintergrund geladen (schnelles Umschalten, Zähler aktuell).
+- Ungelesen-Zähler: Seitentitel mit `unreadTitlePattern` auswerten, aber nur solange die Seite im Posteingang ist
+  (Adresse beginnt mit `folders.primary` oder `homeUrl`); Wert erscheint am Konto und am Posteingang, zählt in
+  Dock-/Taskleisten-Badge mit. Steigt er, kommt eine Benachrichtigung „<Konto>: N neue E-Mail(s)“ (wenn
+  Benachrichtigungen an sind); Klick öffnet den Posteingang des Kontos.
+- E-Mail-Adresse leer und Seitentitel enthält eine Adresse (z. B. „Inbox (3) - name@gmail.com - Gmail“) → übernehmen.
+- Pop-ups/neue Fenster: Ziel-Host gehört zum Anbieter (gleiche registrierbare Domain wie eine der `web`-Adressen,
+  vereinfacht: letzte zwei Host-Teile) → im selben eingebetteten Browser öffnen; sonst im Standardbrowser.
+  Downloads (Anhänge) landen im Download-Ordner.
+- „Alle Posteingänge“, Ungelesen, Markiert, Suche, Regeln, Verfassen usw. betreffen nur IMAP-Konten. „Neue E-Mail“
+  ohne IMAP-Konto öffnet den Posteingang des ersten Web-Kontos mit Hinweis „Schreibe direkt im Postfach (Verfassen)“.

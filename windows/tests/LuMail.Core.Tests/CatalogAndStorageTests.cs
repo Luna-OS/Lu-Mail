@@ -53,7 +53,7 @@ public class ProviderCatalogTests
         Assert.True(Catalog.Get("custom").CustomServers);
         Assert.Equal(new[] { "custom" }, Catalog.Providers.Where(p => p.CustomServers).Select(p => p.Id));
         var outlook = Catalog.Get("outlook");
-        Assert.Equal(new[] { "oauth2" }, outlook.AuthMethods);
+        Assert.Equal(new[] { "web", "oauth2" }, outlook.AuthMethods);
         Assert.Equal("idToken", outlook.OAuth!.EmailSource);
         Assert.Equal("starttls", Catalog.Get("icloud").Smtp.Security);
         Assert.Equal(587, Catalog.Get("icloud").Smtp.Port);

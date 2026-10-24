@@ -11,6 +11,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// Wird aufgerufen, wenn eine Mitteilung angeklickt wird (Konto-ID, Ordner, UID).
     var onOpen: ((UUID, String, UInt32) -> Void)?
+    /// Mitteilung eines Web-Kontos angeklickt (Konto-ID).
+    var onOpenWeb: ((UUID) -> Void)?
 
     /// UNUserNotificationCenter stürzt ohne Bundle-ID ab (z. B. bei `swift run`).
     private var isAvailable: Bool { Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app" }
@@ -42,14 +44,28 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Neue Mails in einem Web-Konto (§20) – der Inhalt ist nur im Webmail sichtbar.
+    func notifyWeb(accountId: UUID, title: String, subtitle: String, body: String) {
+        guard isAvailable else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.subtitle = subtitle
+        content.body = body
+        content.sound = .default
+        content.userInfo = ["account": accountId.uuidString, "web": true]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "lumail-web-\(UUID().uuidString)", content: content, trigger: nil))
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let info = response.notification.request.content.userInfo
         let account = (info["account"] as? String).flatMap(UUID.init(uuidString:))
         let folder = info["folder"] as? String
         let uid = (info["uid"] as? Int).map(UInt32.init)
+        let isWeb = info["web"] as? Bool ?? false
         Task { @MainActor in
             NSApplication.shared.activate(ignoringOtherApps: true)
+            if isWeb, let account { self.onOpenWeb?(account) }
             if let account, let folder, let uid { self.onOpen?(account, folder, uid) }
             completionHandler()
         }

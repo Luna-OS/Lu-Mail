@@ -77,7 +77,33 @@ public sealed partial class MainPage : Page
             foreach (var item in items.OrderByDescending(m => m.Summary.Date).Take(5)) App.Notifications.ShowMessage(item);
         };
         Vm.ReminderDue += (_, item) => App.Notifications.ShowMessage(item, "Erinnerung: ");
-        Vm.CountersChanged += (_, _) => Tray?.Update(Vm.PrimaryUnreadCount, Vm.NewestUnread());
+        Vm.CountersChanged += (_, _) => UpdateTray();
+        Vm.SelectedChanged += async (_, _) => await ApplyWebSelectionAsync();
+        Vm.WebUnread = id => App.Web.Unread(id);
+        App.Web.CountChanged += (_, _) =>
+        {
+            Vm.RecountSidebar();
+            UpdateTray();
+        };
+        App.Web.NewMail += (_, e) =>
+        {
+            if (_s.Settings.Notifications) App.Notifications.ShowWebMail(e.Account, e.NewCount);
+        };
+        App.Web.AccountUpdated += (_, _) =>
+        {
+            Vm.LoadAccounts();
+            Vm.RebuildSidebar(force: true);
+            if (App.Web.ActiveAccount is { } active) WebAccountText.Text = active.Email;
+        };
+        App.Web.NavigationChanged += (_, _) =>
+        {
+            WebBackButton.IsEnabled = App.Web.CanGoBack;
+            WebForwardButton.IsEnabled = App.Web.CanGoForward;
+        };
+        _s.Setup.AccountRemoved += (_, account) =>
+        {
+            if (account.IsWeb) DispatcherQueue.TryEnqueue(() => App.Web.Remove(account));
+        };
 
         StartRefreshTimer();
         StartDueTimer();
@@ -88,8 +114,11 @@ public sealed partial class MainPage : Page
         if (_s.Settings.AppLock) Lock(promptNow: true);
 
         await InitWebViewAsync();
+        App.Web.Attach(WebHost, async () => ReaderView.CoreWebView2?.Environment
+            ?? await CoreWebView2Environment.CreateWithOptionsAsync("", WebAccountService.UserDataFolder, new CoreWebView2EnvironmentOptions()));
         await Vm.LoadFromCacheAsync();
         UpdateListHeader();
+        _ = App.Web.SyncAccountsAsync(Vm.WebAccounts);
         if (App.PendingNotification is { } pending)
         {
             App.PendingNotification = null;
@@ -710,17 +739,26 @@ public sealed partial class MainPage : Page
 
     // ======================================================== Verfassen
 
-    private Account? DefaultAccount() => _current?.Account ?? Vm.Selected?.Account ?? Vm.Accounts.FirstOrDefault();
+    private Account? DefaultAccount() =>
+        _current?.Account ?? (Vm.Selected?.Account is { IsWeb: false } selected ? selected : null) ?? Vm.ImapAccounts.FirstOrDefault();
 
     private void OpenCompose(OutgoingMessage? draft = null, Account? from = null)
     {
-        if (Vm.Accounts.Count == 0)
+        if (Vm.ImapAccounts.Count == 0)
         {
+            if (Vm.WebAccounts.FirstOrDefault() is { } web && Vm.FindSidebar($"web:{web.Id}:primary") is { } inbox)
+            {
+                // §20: ohne IMAP-Konto im Webmail schreiben
+                _ = Vm.SelectAsync(inbox);
+                WebInfoBar.Message = "Schreibe direkt im Postfach (Verfassen).";
+                WebInfoBar.IsOpen = true;
+                return;
+            }
             _ = ShowAddAccountAsync(); // §19: „Neue E-Mail“ ohne Konto öffnet „Konto hinzufügen“
             return;
         }
         var window = new ComposeWindow();
-        window.Initialize(Vm.Accounts, from ?? DefaultAccount(), draft, Vm);
+        window.Initialize(Vm.ImapAccounts, from is { IsWeb: false } ? from : DefaultAccount(), draft, Vm);
         window.Activate();
     }
 
@@ -804,6 +842,12 @@ public sealed partial class MainPage : Page
     /// <summary>Klick auf eine Systemmitteilung oder einen Eintrag im Infobereich: Nachricht öffnen.</summary>
     public void OpenFromNotification(IDictionary<string, string> args)
     {
+        if (args.TryGetValue("action", out var action) && action == "web" && args.TryGetValue("account", out var webAccount))
+        {
+            HostWindow?.Activate();
+            if (Vm.FindSidebar($"web:{webAccount}:primary") is { } inbox) _ = Vm.SelectAsync(inbox);
+            return;
+        }
         if (!args.TryGetValue("account", out var accountId) || !args.TryGetValue("folder", out var folder)
             || !args.TryGetValue("uid", out var uidText) || !uint.TryParse(uidText, NumberStyles.None, CultureInfo.InvariantCulture, out var uid))
             return;
@@ -874,6 +918,40 @@ public sealed partial class MainPage : Page
         _deactivatedAt = null;
     }
 
+    // ======================================================== Web-Konten
+
+    private void UpdateTray() => Tray?.Update(Vm.PrimaryUnreadCount + App.Web.TotalUnread, Vm.NewestUnread());
+
+    /// <summary>Web-Eintrag gewählt → Webmail statt Liste und Leseansicht (§20).</summary>
+    private async Task ApplyWebSelectionAsync()
+    {
+        if (Vm.Selected is { Target: SidebarTarget.Web, Account: { } account } item)
+        {
+            ListPane.Visibility = Visibility.Collapsed;
+            ReaderPane.Visibility = Visibility.Collapsed;
+            WebAccountText.Text = account.Email;
+            try
+            {
+                await App.Web.ShowAsync(account, item.FolderPath ?? "primary");
+            }
+            catch (Exception ex)
+            {
+                ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
+            }
+        }
+        else
+        {
+            App.Web.HideAll();
+            WebInfoBar.IsOpen = false;
+            ListPane.Visibility = Visibility.Visible;
+            ReaderPane.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnWebBackClick(object sender, RoutedEventArgs e) => App.Web.GoBack();
+    private void OnWebForwardClick(object sender, RoutedEventArgs e) => App.Web.GoForward();
+    private void OnWebReloadClick(object sender, RoutedEventArgs e) => App.Web.Reload();
+
     // ======================================================= Dialoge
 
     private bool _addAccountOpen;
@@ -893,7 +971,8 @@ public sealed partial class MainPage : Page
             if (dialog.AddedAccount is { } account)
             {
                 await Vm.RefreshAllAsync();
-                var inbox = Vm.Sidebar.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target == SidebarTarget.Category);
+                await App.Web.SyncAccountsAsync(Vm.WebAccounts);
+                var inbox = Vm.Sidebar.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target is SidebarTarget.Category or SidebarTarget.Web);
                 if (inbox is not null) await Vm.SelectAsync(inbox);
                 UpdateListHeader();
             }
@@ -938,6 +1017,7 @@ public sealed partial class MainPage : Page
         {
             ClearReader();
             await Vm.RefreshAllAsync();
+            await App.Web.SyncAccountsAsync(Vm.WebAccounts);
         }
         else
         {

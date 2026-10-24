@@ -686,3 +686,115 @@ public class DiscoveryTests
         Assert.Contains("LuMail.BuiltInOAuth.json", typeof(LuMail.Core.Auth.OAuthClientConfig).Assembly.GetManifestResourceNames());
     }
 }
+
+public class WebMailTests
+{
+    private static readonly ProviderCatalog Catalog = ProviderCatalog.LoadEmbedded();
+    private static WebConfig Gmail => Catalog.Get("gmail").Web!;
+
+    [Fact]
+    public void AllProvidersExceptCustomHaveWeb_AndLoginUrlNeverCountsAsLoggedIn()
+    {
+        foreach (var p in Catalog.Providers)
+        {
+            if (p.CustomServers)
+            {
+                Assert.False(p.SupportsWeb);
+                continue;
+            }
+            Assert.True(p.SupportsWeb, p.Id);
+            Assert.Equal("web", p.AuthMethods[0]);
+            Assert.False(WebMail.IsLoggedIn(p.Web!, p.Web!.LoginUrl), p.Id);
+            Assert.NotNull(WebMail.FolderUrl(p.Web!, "primary"));
+            Assert.True(WebMail.IsInternalHost(p.Web!, p.Web!.HomeUrl), p.Id);
+        }
+    }
+
+    [Fact]
+    public void IsLoggedIn_PrefixMatch_EmptyPrefixesNever()
+    {
+        Assert.True(WebMail.IsLoggedIn(Gmail, "https://mail.google.com/mail/u/0/#inbox"));
+        Assert.False(WebMail.IsLoggedIn(Gmail, "https://accounts.google.com/signin"));
+        Assert.False(WebMail.IsLoggedIn(Gmail, null));
+        var icloud = Catalog.Get("icloud").Web!;
+        Assert.Empty(icloud.LoggedInPrefixes);
+        Assert.False(WebMail.IsLoggedIn(icloud, "https://www.icloud.com/mail/"));
+    }
+
+    [Fact]
+    public void SidebarEntries_OrderAndCategorySetting()
+    {
+        Assert.Equal(new[] { "primary", "promotions", "social", "updates", "forums", "sent", "drafts", "archive", "spam", "trash" }
+                .Where(k => Gmail.Folders.ContainsKey(k)),
+            WebMail.SidebarEntries(Gmail, separateCategories: true).Select(e => e.Key));
+        var compact = WebMail.SidebarEntries(Gmail, separateCategories: false);
+        Assert.Equal("Posteingang", compact[0].Name);
+        Assert.DoesNotContain(compact, e => e.Key is "promotions" or "social" or "updates" or "forums");
+        Assert.Contains(compact, e => e.Key == "sent");
+        Assert.Equal(new[] { "primary" }, WebMail.SidebarEntries(Catalog.Get("gmx").Web!, true).Select(e => e.Key));
+        Assert.Null(WebMail.FolderUrl(Catalog.Get("mailru").Web!, "archive"));
+    }
+
+    [Fact]
+    public void UnreadCount_InboxDetection_EmailFromTitle()
+    {
+        Assert.Equal(3, WebMail.UnreadCount(Gmail, "Inbox (3) - max@gmail.com - Gmail"));
+        Assert.Null(WebMail.UnreadCount(Gmail, "Inbox - max@gmail.com - Gmail"));
+        Assert.True(WebMail.IsOnInbox(Gmail, "https://mail.google.com/mail/u/0/#inbox"));
+        Assert.False(WebMail.IsOnInbox(Gmail, "https://mail.google.com/mail/u/0/#sent"));
+        Assert.Equal("max@gmail.com", WebMail.EmailFromTitle("Inbox (3) - max@gmail.com - Gmail"));
+        Assert.Null(WebMail.EmailFromTitle("Proton Mail"));
+        Assert.Equal("https://shop.de/a?b=1", WebMail.RedirectTarget("https://www.google.com/url?q=https://shop.de/a%3Fb%3D1&sa=D"));
+        Assert.Null(WebMail.RedirectTarget("https://www.google.com/search?q=test"));
+        Assert.Null(WebMail.RedirectTarget("https://www.google.com/url?q=javascript:alert(1)"));
+    }
+
+    [Fact]
+    public void InternalHosts()
+    {
+        Assert.True(WebMail.IsInternalHost(Gmail, "https://accounts.google.com/x"));
+        Assert.False(WebMail.IsInternalHost(Gmail, "https://www.example.org/"));
+        Assert.Equal("google.com", WebMail.SiteOf("https://mail.google.com/mail"));
+    }
+
+    [Fact]
+    public void WebAccount_JsonAndFlags()
+    {
+        var account = new Account { ProviderId = "gmail", Email = "max@gmail.com", AuthMethod = Account.AuthWeb };
+        Assert.True(account.IsWeb);
+        Assert.False(account.IsOAuth);
+        var json = System.Text.Json.JsonSerializer.Serialize(account, Resources.LuJson.Options);
+        Assert.Contains("\"authMethod\": \"web\"", json);
+        Assert.DoesNotContain("isWeb", json, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+public class WebAccountSetupTests
+{
+    [Fact]
+    public void AddWebAccount_StoresWebMethod_NoSecrets()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lumail-web-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var secrets = new InMemorySecretStore();
+            var store = new AccountStore(Path.Combine(dir, "accounts.json"));
+            var tokens = new LuMail.Core.Auth.OAuthTokenManager(new LuMail.Core.Auth.OAuthClient(new HttpClient()), secrets, () => LuMail.Core.Auth.OAuthClientConfig.Empty);
+            var mail = new MailService(ProviderCatalog.LoadEmbedded(), CategoryCatalog.LoadEmbedded(), new StoredCredentialSource(secrets, tokens));
+            var setup = new AccountSetupService(new BrowserLoginService(_ => { }, new LuMail.Core.Auth.OAuthClient(new HttpClient())),
+                mail, store, secrets, tokens, () => LuMail.Core.Auth.OAuthClientConfig.Empty);
+            var proton = ProviderCatalog.LoadEmbedded().Get("proton");
+
+            var a = setup.AddWebAccount(proton, "ID-1", null);
+            Assert.Equal(("Proton Mail", "web"), (a.Email, a.AuthMethod));
+            var b = setup.AddWebAccount(proton, "ID-2", "max@proton.me");
+            Assert.Equal("Max", b.DisplayName);
+            Assert.Equal(2, store.Load().Count(x => x.IsWeb));
+            Assert.Equal(0, secrets.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch (IOException) { }
+        }
+    }
+}
