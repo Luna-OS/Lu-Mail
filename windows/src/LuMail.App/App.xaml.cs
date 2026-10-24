@@ -14,6 +14,9 @@ public partial class App : Application
     /// <summary>Auto-Updater.</summary>
     public static UpdateManager Updates { get; private set; } = null!;
 
+    /// <summary>Web-Konten (eingebettetes Webmail).</summary>
+    public static WebAccountService Web { get; private set; } = null!;
+
     /// <summary>Systemmitteilungen.</summary>
     public static NotificationService Notifications { get; } = new();
 
@@ -35,6 +38,7 @@ public partial class App : Application
     {
         Services = AppServices.Create();
         Updates = new UpdateManager(Services);
+        Web = new WebAccountService(Services);
         ThemeService.ApplyPalette(Services.Theme, Services.Settings);
 
         // Mitteilungen registrieren, bevor die Aktivierungsart geprüft wird.

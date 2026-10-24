@@ -29,6 +29,8 @@ public enum SidebarTarget
     Scheduled,
     /// <summary>„Alle &lt;Anbieter&gt;-Posteingänge“ (Anbieter mit mehreren Konten).</summary>
     ProviderInbox,
+    /// <summary>Ordner eines Web-Kontos (FolderPath = Ordner-Schlüssel aus providers.json → web.folders).</summary>
+    Web,
     /// <summary>Kategorie (virtueller INBOX-Unterordner) oder – ohne Kategorientrennung – ganzer Posteingang.</summary>
     Category,
     /// <summary>Server-Ordner.</summary>

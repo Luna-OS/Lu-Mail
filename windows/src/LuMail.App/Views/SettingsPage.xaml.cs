@@ -205,13 +205,23 @@ public sealed partial class SettingsPage : Page
             var servers = provider?.CustomServers == true && account.CustomServers is { } cs
                 ? $" · {cs.Imap.Host}:{cs.Imap.Port} / {cs.Smtp.Host}:{cs.Smtp.Port}"
                 : "";
-            text.Children.Add(new TextBlock { Text = $"{provider?.Name ?? account.ProviderId} · {(account.IsOAuth ? "OAuth" : "Passwort")}{servers}", FontSize = 12, Opacity = 0.7 });
+            text.Children.Add(new TextBlock { Text = $"{provider?.Name ?? account.ProviderId} · {(account.IsWeb ? "Web-Anmeldung" : account.IsOAuth ? "OAuth" : "Passwort")}{servers}", FontSize = 12, Opacity = 0.7 });
             var remove = new Button { Content = "Entfernen", Tag = account, VerticalAlignment = VerticalAlignment.Center };
             remove.Click += OnRemoveAccountClick;
             panel.Children.Add(Row(
                 (new Ellipse { Width = 10, Height = 10, Fill = BrushCache.ForProvider(provider), VerticalAlignment = VerticalAlignment.Center }, Auto),
                 (text, Star), (remove, Auto)));
 
+            if (account.IsWeb)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = "Web-Konto: Lu-Mail zeigt das Webmail des Anbieters; Signatur und Regeln stellst du dort ein.",
+                    FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap,
+                });
+                AccountsPanel.Children.Add(panel);
+                continue;
+            }
             var signature = new TextBox
             {
                 Header = "Signatur",

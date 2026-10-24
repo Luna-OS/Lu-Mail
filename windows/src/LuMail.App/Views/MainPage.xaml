@@ -47,9 +47,16 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}"
                            Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
-                <FontIcon Grid.Column="1" FontSize="13" Foreground="{ThemeResource LuDanger}" Glyph="&#xE7BA;"
-                          ToolTipService.ToolTip="{x:Bind Error, Mode=OneWay}"
-                          Visibility="{x:Bind ErrorVisibility, Mode=OneWay}" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="13" Foreground="{ThemeResource LuDanger}" Glyph="&#xE7BA;"
+                              ToolTipService.ToolTip="{x:Bind Error, Mode=OneWay}"
+                              Visibility="{x:Bind ErrorVisibility, Mode=OneWay}" />
+                    <Border MinWidth="20" Padding="7,1,7,2" VerticalAlignment="Center" Background="{ThemeResource LuAccent}"
+                            CornerRadius="9" Visibility="{x:Bind BadgeVisibility, Mode=OneWay}">
+                        <TextBlock HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource LuAccentText}" Text="{x:Bind UnreadText, Mode=OneWay}" />
+                    </Border>
+                </StackPanel>
             </Grid>
         </DataTemplate>
 
@@ -218,8 +225,39 @@
                 </Grid>
             </Grid>
 
+            <!-- ===== Web-Konto (eingebettetes Webmail, §20) – liegt hinter Liste und Leseansicht ===== -->
+            <Grid x:Name="WebPanel" Grid.Column="1" Grid.ColumnSpan="2" Background="{ThemeResource LuSurface}"
+                  BorderBrush="{ThemeResource LuBorder}" BorderThickness="1,1,0,0" CornerRadius="10,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Padding="10,6,12,6" ColumnSpacing="4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="WebBackButton" Click="OnWebBackClick" ToolTipService.ToolTip="Zurück">
+                        <FontIcon FontSize="13" Glyph="&#xE72B;" />
+                    </Button>
+                    <Button x:Name="WebForwardButton" Grid.Column="1" Click="OnWebForwardClick" ToolTipService.ToolTip="Vor">
+                        <FontIcon FontSize="13" Glyph="&#xE72A;" />
+                    </Button>
+                    <Button Grid.Column="2" Click="OnWebReloadClick" ToolTipService.ToolTip="Neu laden">
+                        <FontIcon FontSize="13" Glyph="&#xE72C;" />
+                    </Button>
+                    <TextBlock x:Name="WebAccountText" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center"
+                               FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextSecondary}" TextTrimming="CharacterEllipsis" />
+                </Grid>
+                <InfoBar x:Name="WebInfoBar" Grid.Row="1" Margin="10,0,10,6" IsClosable="True" IsOpen="False" Severity="Informational" />
+                <Grid x:Name="WebHost" Grid.Row="2" />
+            </Grid>
+
             <!-- ===== Nachrichtenliste ===== -->
-            <Grid Grid.Column="1" Background="{ThemeResource LuBackground}" BorderBrush="{ThemeResource LuBorder}"
+            <Grid x:Name="ListPane" Grid.Column="1" Background="{ThemeResource LuBackground}" BorderBrush="{ThemeResource LuBorder}"
                   BorderThickness="1,1,1,0" CornerRadius="10,0,0,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -304,7 +342,7 @@
             </Grid>
 
             <!-- ===== Leseansicht ===== -->
-            <Grid Grid.Column="2" Background="{ThemeResource LuSurface}" BorderBrush="{ThemeResource LuBorder}" BorderThickness="0,1,0,0">
+            <Grid x:Name="ReaderPane" Grid.Column="2" Background="{ThemeResource LuSurface}" BorderBrush="{ThemeResource LuBorder}" BorderThickness="0,1,0,0">
                 <StackPanel x:Name="ReaderPlaceholder" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
                     <FontIcon HorizontalAlignment="Center" FontSize="48" Foreground="{ThemeResource LuTextMuted}" Glyph="&#xE715;" />
                     <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource LuTextMuted}" Text="Keine Nachricht ausgewählt" />

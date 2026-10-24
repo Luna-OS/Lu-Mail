@@ -45,6 +45,14 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<SidebarItem> Sidebar { get; } = new();
     public ObservableCollection<MessageItem> Messages { get; } = new();
     public List<Account> Accounts { get; private set; } = new();
+    /// <summary>Konten mit IMAP/SMTP (ohne Web-Konten) – nur diese betreffen Abruf, Push, Suche, Regeln, Verfassen.</summary>
+    public IReadOnlyList<Account> ImapAccounts => Accounts.Where(a => !a.IsWeb).ToList();
+    /// <summary>Web-Konten (eingebettetes Webmail, FUNKTIONEN §20).</summary>
+    public IReadOnlyList<Account> WebAccounts => Accounts.Where(a => a.IsWeb).ToList();
+    /// <summary>Ungelesen-Zahl eines Web-Kontos (aus dem Seitentitel).</summary>
+    public Func<string, int?>? WebUnread { get; set; }
+    /// <summary>Auswahl in der Seitenleiste hat sich geändert.</summary>
+    public event EventHandler? SelectedChanged;
     public SidebarItem? Selected { get; private set; }
 
     /// <summary>Nach dem Neubefüllen von <see cref="Messages"/> (Auswahl wiederherstellen).</summary>
@@ -139,7 +147,7 @@ public sealed class MainViewModel : ObservableObject
         LoadAccounts();
         if (_s.Settings.OfflineCache)
         {
-            foreach (var account in Accounts)
+            foreach (var account in ImapAccounts)
             {
                 var provider = _s.Providers.Find(account.ProviderId);
                 if (provider is null) continue;
@@ -170,13 +178,13 @@ public sealed class MainViewModel : ObservableObject
             LoadAccounts();
             RebuildSidebar();
             var errors = new List<string>();
-            await Task.WhenAll(Accounts.Select(async account =>
+            await Task.WhenAll(ImapAccounts.Select(async account =>
             {
                 await RefreshAccountAsync(account, foldersToo: true);
                 var state = State(account.Id);
                 if (!string.IsNullOrEmpty(state.Error) && !state.Offline) errors.Add($"{account.Email}: {state.Error}");
             }));
-            if (Accounts.Count == 0) await ShowSelectedAsync(reload: false);
+            if (ImapAccounts.Count == 0) await ShowSelectedAsync(reload: false);
             if (errors.Count > 0) ErrorOccurred?.Invoke(this, string.Join("\n", errors));
             StartIdleMonitors();
             await ProcessDueAsync();
@@ -297,7 +305,7 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>§1: pro Konto eine zweite Verbindung mit IMAP IDLE.</summary>
     private void StartIdleMonitors()
     {
-        foreach (var account in Accounts)
+        foreach (var account in ImapAccounts)
         {
             if (_idle.ContainsKey(account.Id)) continue;
             var provider = _s.Providers.Find(account.ProviderId);
@@ -345,7 +353,7 @@ public sealed class MainViewModel : ObservableObject
     private IEnumerable<string> CategoryIds =>
         MessageCategories.All.Select(c => c.ToId()).Concat(_s.Rules.CustomCategories.Select(c => c.Id));
 
-    public void RebuildSidebar()
+    public void RebuildSidebar(bool force = false)
     {
         var separate = _s.Settings.SeparateCategories;
         var items = new List<SidebarItem>
@@ -363,11 +371,11 @@ public sealed class MainViewModel : ObservableObject
             var accounts = Accounts.Where(a => string.Equals(a.ProviderId, provider.Id, StringComparison.OrdinalIgnoreCase)).ToList();
             if (accounts.Count == 0) continue;
 
-            // §9: mehrere Konten → Überschrift klickbar („Alle <Anbieter>-Posteingänge“).
+            // §9: mehrere (IMAP-)Konten → Überschrift klickbar („Alle <Anbieter>-Posteingänge“).
             items.Add(new SidebarItem
             {
                 Kind = SidebarItemKind.Provider, Title = provider.Name, Provider = provider,
-                Target = accounts.Count > 1 ? SidebarTarget.ProviderInbox : SidebarTarget.None,
+                Target = accounts.Count(a => !a.IsWeb) > 1 ? SidebarTarget.ProviderInbox : SidebarTarget.None,
                 ListTitle = $"Alle {provider.Name}-Posteingänge",
                 DotBrush = BrushCache.ForProvider(provider), Key = "provider:" + provider.Id,
             });
@@ -381,6 +389,26 @@ public sealed class MainViewModel : ObservableObject
                     Account = account, Provider = provider, Key = "account:" + account.Id,
                     Indent = new Thickness(8, 0, 0, 0), Error = state.Error,
                 });
+
+                if (account.IsWeb)
+                {
+                    // §20: Ordner des Web-Kontos aus providers.json → web.folders
+                    if (provider.Web is not null)
+                    {
+                        foreach (var entry in LuMail.Core.Catalog.WebMail.SidebarEntries(provider.Web, separate))
+                        {
+                            items.Add(new SidebarItem
+                            {
+                                Kind = SidebarItemKind.Folder, Target = SidebarTarget.Web, Title = entry.Name,
+                                ListTitle = $"{entry.Name} · {account.Email}",
+                                Glyph = entry.IsCategory ? CategoryGlyph(entry.Key) : RoleGlyph(WebRole(entry.Key)),
+                                Account = account, Provider = provider, FolderPath = entry.Key,
+                                Key = $"web:{account.Id}:{entry.Key}", Indent = new Thickness(20, 0, 0, 0),
+                            });
+                        }
+                    }
+                    continue;
+                }
 
                 if (separate)
                 {
@@ -423,7 +451,7 @@ public sealed class MainViewModel : ObservableObject
         }
 
         var selectedKey = Selected?.Key ?? "all";
-        if (Sidebar.Select(i => i.Key).SequenceEqual(items.Select(i => i.Key)))
+        if (!force && Sidebar.Select(i => i.Key).SequenceEqual(items.Select(i => i.Key)))
         {
             for (var i = 0; i < items.Count; i++) Sidebar[i].Error = items[i].Error;
         }
@@ -435,9 +463,21 @@ public sealed class MainViewModel : ObservableObject
 
         var selected = Sidebar.FirstOrDefault(i => i.Key == selectedKey && i.IsSelectable) ?? Sidebar.First(i => i.Key == "all");
         foreach (var item in Sidebar) item.IsSelected = ReferenceEquals(item, selected);
+        var changed = Selected?.Key != selected.Key;
         Selected = selected;
         RecountSidebar();
+        if (changed) SelectedChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    private static FolderRole WebRole(string key) => key switch
+    {
+        "sent" => FolderRole.Sent,
+        "drafts" => FolderRole.Drafts,
+        "archive" => FolderRole.Archive,
+        "spam" => FolderRole.Spam,
+        "trash" => FolderRole.Trash,
+        _ => FolderRole.None,
+    };
 
     public void RecountSidebar()
     {
@@ -451,7 +491,8 @@ public sealed class MainViewModel : ObservableObject
                 SidebarTarget.Flagged => AllInboxItems.Count(m => m.Flagged && !m.Seen),
                 SidebarTarget.Reminders => _s.Snoozes.All.Count,
                 SidebarTarget.Scheduled => _s.Outbox.All().Count,
-                SidebarTarget.ProviderInbox when item.Provider is not null => Accounts.Where(a => a.ProviderId == item.Provider.Id)
+                SidebarTarget.Web when item.Account is not null && item.FolderPath == "primary" => WebUnread?.Invoke(item.Account.Id) ?? 0,
+                SidebarTarget.ProviderInbox when item.Provider is not null => ImapAccounts.Where(a => a.ProviderId == item.Provider.Id)
                     .SelectMany(a => VisibleInbox(State(a.Id))).Count(m => !m.Seen && (!separate || m.CategoryId == Primary)),
                 SidebarTarget.Category when item.Account is not null => VisibleInbox(State(item.Account.Id))
                     .Count(m => !m.Seen && (item.CategoryId is null || m.CategoryId == item.CategoryId)),
@@ -460,6 +501,9 @@ public sealed class MainViewModel : ObservableObject
                 _ => 0,
             };
         }
+        // Web-Konten: Zahl auch am Konto (§20)
+        foreach (var item in Sidebar.Where(i => i.Kind == SidebarItemKind.Account && i.Account is { IsWeb: true }))
+            item.Unread = WebUnread?.Invoke(item.Account!.Id) ?? 0;
     }
 
     /// <summary>§2: Ungelesene der Kategorie Posteingang über alle Konten.</summary>
@@ -479,6 +523,7 @@ public sealed class MainViewModel : ObservableObject
         Selected = item;
         item.IsSelected = true;
         _serverResults.Clear();
+        SelectedChanged?.Invoke(this, EventArgs.Empty);
         await ShowSelectedAsync(reload: false);
     }
 
@@ -515,7 +560,7 @@ public sealed class MainViewModel : ObservableObject
                 list = ScheduledItems();
                 break;
             case SidebarTarget.ProviderInbox when item.Provider is not null:
-                list = Accounts.Where(a => a.ProviderId == item.Provider.Id).SelectMany(a => VisibleInbox(State(a.Id)))
+                list = ImapAccounts.Where(a => a.ProviderId == item.Provider.Id).SelectMany(a => VisibleInbox(State(a.Id)))
                     .Where(m => !separate || m.CategoryId == Primary).ToList();
                 break;
             case SidebarTarget.Category when item.Account is not null:
@@ -675,10 +720,12 @@ public sealed class MainViewModel : ObservableObject
                 targets.Add((Selected.Account, "INBOX"));
                 break;
             case SidebarTarget.ProviderInbox when Selected.Provider is not null:
-                targets.AddRange(Accounts.Where(a => a.ProviderId == Selected.Provider.Id).Select(a => (a, "INBOX")));
+                targets.AddRange(ImapAccounts.Where(a => a.ProviderId == Selected.Provider.Id).Select(a => (a, "INBOX")));
                 break;
+            case SidebarTarget.Web:
+                return; // Web-Konten durchsucht man im Webmail selbst
             default:
-                targets.AddRange(Accounts.Select(a => (a, "INBOX")));
+                targets.AddRange(ImapAccounts.Select(a => (a, "INBOX")));
                 break;
         }
 
