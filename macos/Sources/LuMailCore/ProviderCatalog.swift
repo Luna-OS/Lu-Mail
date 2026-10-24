@@ -61,6 +61,8 @@ public struct Provider: Codable, Hashable, Identifiable, Sendable {
     public var mxSuffixes: [String]?
     /// Anleitung für den Assistenten „Konto hinzufügen“.
     public var setup: SetupGuide?
+    /// Webmail für Web-Konten (docs/FUNKTIONEN.md §20).
+    public var web: WebConfig?
 
     public var usesGmailCategories: Bool { serverCategories == "gmail" }
     public var needsCustomServers: Bool { customServers == true }
@@ -97,17 +99,21 @@ public struct ProviderCatalog: Sendable {
     public let providers: [Provider]
     public let folderRoles: [FolderRole: FolderRoleHints]
     public let discovery: DiscoveryConfig?
+    /// User-Agent je Plattform für eingebettete Browser (Web-Konten).
+    public let webUserAgent: [String: String]
 
     private struct File: Decodable {
         var providers: [Provider]
         var folderRoles: [String: FolderRoleHints]
         var discovery: DiscoveryConfig?
+        var webUserAgent: [String: String]?
     }
 
     public init(json: String = SharedResources.providersJSON) throws {
         let file = try JSONDecoder().decode(File.self, from: Data(json.utf8))
         providers = file.providers
         discovery = file.discovery
+        webUserAgent = file.webUserAgent ?? [:]
         var roles: [FolderRole: FolderRoleHints] = [:]
         for (key, hints) in file.folderRoles {
             if let role = FolderRole(rawValue: key) { roles[role] = hints }

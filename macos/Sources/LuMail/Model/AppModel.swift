@@ -13,10 +13,12 @@ enum SidebarItem: Hashable {
     case providerInbox(String)
     case category(UUID, MailCategory)
     case folder(UUID, String)
+    /// Ordner eines Web-Kontos (Konto, Schlüssel aus `web.folders`, z. B. „promotions“).
+    case web(UUID, String)
 
     var accountId: UUID? {
         switch self {
-        case .category(let id, _), .folder(let id, _): return id
+        case .category(let id, _), .folder(let id, _), .web(let id, _): return id
         default: return nil
         }
     }
@@ -119,6 +121,10 @@ final class AppModel {
     private let outboxStore: OutboxStore
     let cache: MessageCache
     private var sessions: [UUID: MailAccountSession] = [:]
+    /// Eingebettete Webmail-Postfächer der Web-Konten (§20).
+    let webMail = WebMailService()
+    /// Im Seitentitel gefundene Adressen von Konten, deren Anmeldung noch läuft.
+    private var pendingWebEmails: [UUID: String] = [:]
     private var refreshTimer: Timer?
     private var tickTimer: Timer?
     private var pushTasks: [UUID: Task<Void, Never>] = [:]
@@ -144,6 +150,10 @@ final class AppModel {
         NotificationService.shared.onOpen = { [weak self] accountId, folder, uid in
             self?.reveal(accountId: accountId, folder: folder, uid: uid)
         }
+        NotificationService.shared.onOpenWeb = { [weak self] accountId in
+            self?.selection = .web(accountId, "primary")
+        }
+        setUpWebMail()
         startAutoRefresh()
         startTicker()
         updatePush()
@@ -166,9 +176,68 @@ final class AppModel {
     /// Anbieter in Katalog-Reihenfolge mit ihren Konten (leere Anbieter fehlen).
     var accountsByProvider: [(provider: Provider, accounts: [Account])] {
         catalog.providers.compactMap { provider in
-            let list = accounts.filter { $0.providerId == provider.id }.sorted { $0.email < $1.email }
+            let list = accounts.filter { $0.providerId == provider.id }.sorted { $0.label < $1.label }
             return list.isEmpty ? nil : (provider, list)
         }
+    }
+
+    /// Nur IMAP-Konten (zum Verfassen, Suchen, …).
+    var mailAccounts: [Account] { accounts.filter { !$0.isWeb } }
+
+    var mailAccountsByProvider: [(provider: Provider, accounts: [Account])] {
+        accountsByProvider.compactMap { group in
+            let list = group.accounts.filter { !$0.isWeb }
+            return list.isEmpty ? nil : (group.provider, list)
+        }
+    }
+
+    // MARK: Web-Konten (§20)
+
+    private func setUpWebMail() {
+        webMail.onUnreadChanged = { [weak self] in self?.updateBadge() }
+        webMail.onEmailFound = { [weak self] accountId, email in
+            guard let self else { return }
+            guard let index = accounts.firstIndex(where: { $0.id == accountId }) else {
+                pendingWebEmails[accountId] = email
+                return
+            }
+            guard accounts[index].email.isEmpty else { return }
+            accounts[index].email = email
+            accounts[index].displayName = email
+            saveAccounts()
+        }
+        webMail.onNewMail = { [weak self] accountId, count in
+            guard let self, notificationsEnabled, let account = account(id: accountId) else { return }
+            let name = provider(for: account)?.name ?? "Lu-Mail"
+            NotificationService.shared.notifyWeb(accountId: accountId, title: name, subtitle: account.label,
+                                                 body: count == 1 ? "1 neue E-Mail" : "\(count) neue E-Mails")
+        }
+        for account in accounts where account.isWeb {
+            if let web = provider(for: account)?.web { webMail.preload(account.id, config: web) }
+        }
+    }
+
+    /// Legt ein Web-Konto an, nachdem die Anmeldung im eingebetteten Browser geklappt hat.
+    @discardableResult
+    func addWebAccount(id: UUID, provider: Provider, emailHint: String?) -> Account {
+        webMail.finishLogin(id)
+        let hint = emailHint?.trimmingCharacters(in: .whitespaces) ?? ""
+        let email = hint.isEmpty ? (pendingWebEmails.removeValue(forKey: id) ?? "") : hint
+        let existingCount = accounts.filter { $0.providerId == provider.id && $0.isWeb }.count
+        let fallbackName = existingCount == 0 ? provider.name : "\(provider.name) \(existingCount + 1)"
+        let account = Account(id: id, providerId: provider.id, email: email, displayName: email.isEmpty ? fallbackName : email,
+                              authMethod: .web)
+        accounts.append(account)
+        saveAccounts()
+        selection = .web(id, "primary")
+        return account
+    }
+
+    /// Erneut anmelden (Web-Konto): Anmeldeseite im Postfach des Kontos zeigen.
+    func reloginWeb(_ account: Account) {
+        guard let web = provider(for: account)?.web else { return }
+        selection = .web(account.id, "primary")
+        webMail.showLogin(account.id, config: web)
     }
 
     /// Alle Kategorien für die Sidebar: fest eingebaute plus eigene.
@@ -177,6 +246,8 @@ final class AppModel {
     }
 
     private func session(for account: Account) -> MailAccountSession? {
+        // Web-Konten haben keine IMAP-Verbindung – alles Laden, Push, Suche usw. überspringt sie hier.
+        guard !account.isWeb else { return nil }
         if let session = sessions[account.id] { return session }
         guard let provider = provider(for: account) else { return nil }
         let auth = auth
@@ -204,6 +275,7 @@ final class AppModel {
     }
 
     func removeAccount(_ account: Account, forgetSecrets: Bool = true) {
+        if account.isWeb, forgetSecrets { webMail.discard(account.id) }
         if let session = sessions.removeValue(forKey: account.id) {
             Task { await session.disconnect() }
         }
@@ -306,7 +378,8 @@ final class AppModel {
         if case .folder(let accountId, let path) = selection, let account = account(id: accountId) {
             await loadFolder(path, of: account)
         }
-        isOffline = !accounts.isEmpty && accounts.allSatisfy { accountErrors[$0.id]?.contains("nicht erreichbar") == true || accountErrors[$0.id]?.contains("Verbindung") == true }
+        let mailAccounts = mailAccounts
+        isOffline = !mailAccounts.isEmpty && mailAccounts.allSatisfy { accountErrors[$0.id]?.contains("nicht erreichbar") == true || accountErrors[$0.id]?.contains("Verbindung") == true }
     }
 
     func refresh(_ account: Account) async {
@@ -414,16 +487,18 @@ final class AppModel {
             return count
         }
         if case .scheduled = item { return 0 }
+        if case .web(let accountId, let key) = item { return key == "primary" ? webMail.unread[accountId] ?? 0 : 0 }
         return list(for: item, applySearch: false).filter { !$0.isSeen }.count
     }
 
     func unreadCount(account: Account) -> Int {
-        inboxMessages(of: account.id).filter { !$0.isSeen }.count
+        if account.isWeb { return webMail.unread[account.id] ?? 0 }
+        return inboxMessages(of: account.id).filter { !$0.isSeen }.count
     }
 
     /// Ungelesene im Posteingang (Kategorie Posteingang) aller Konten – für Dock und Menüleiste.
     var totalUnread: Int {
-        list(for: .allInboxes, applySearch: false).filter { !$0.isSeen }.count
+        list(for: .allInboxes, applySearch: false).filter { !$0.isSeen }.count + webMail.unread.values.reduce(0, +)
     }
 
     var latestUnread: [MessageSummary] {
@@ -460,7 +535,7 @@ final class AppModel {
         case .reminders:
             let all = accounts.flatMap { account in (messages[account.id] ?? [:]).values.flatMap { $0 } }
             return all.filter { message in snoozed.contains { $0.matches(message) } }.sorted { $0.date > $1.date }
-        case .scheduled:
+        case .scheduled, .web:
             return []
         case .category(let accountId, let category):
             result = inboxMessages(of: accountId)
@@ -529,6 +604,9 @@ final class AppModel {
         case .folder(let accountId, let path):
             let name = folders[accountId]?.first { $0.path == path }?.displayName ?? path
             return "\(name) – \(account(id: accountId)?.email ?? "")"
+        case .web(let accountId, let key):
+            let name = WebConfig.folderOrder.first { $0.key == key }?.title ?? key
+            return "\(name) – \(account(id: accountId)?.label ?? "")"
         }
     }
 
@@ -832,7 +910,14 @@ final class AppModel {
             showAddAccount = true
             return
         }
-        let accountId = selection?.accountId ?? accounts.first?.id
+        guard let firstMailAccount = mailAccounts.first else {
+            // Nur Web-Konten: im Webmail selbst schreiben (§20).
+            let webAccount = selection?.accountId.flatMap { account(id: $0) } ?? accounts[0]
+            selection = .web(webAccount.id, "primary")
+            banner = "Schreibe direkt im Postfach – oben auf „Verfassen“ bzw. „Schreiben“ klicken."
+            return
+        }
+        let accountId = selection?.accountId.flatMap { account(id: $0) }.flatMap { $0.isWeb ? nil : $0.id } ?? firstMailAccount.id
         let signature = accountId.flatMap { account(id: $0)?.signature }
         composeDraft = ComposeDraft(accountId: accountId, to: recipient, body: MessageBuilder.bodyWithSignature("", signature: signature))
     }

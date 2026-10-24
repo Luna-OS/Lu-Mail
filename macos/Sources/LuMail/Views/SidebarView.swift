@@ -68,7 +68,9 @@ struct SidebarView: View {
                 if isExpanded { collapsedAccounts.remove(account.id) } else { collapsedAccounts.insert(account.id) }
             })
         DisclosureGroup(isExpanded: expanded) {
-            if model.separateCategories {
+            if account.isWeb {
+                webFolders(account)
+            } else if model.separateCategories {
                 ForEach(model.allCategories, id: \.self) { category in
                     row(category.title(model.rules), systemImage: category.systemImage(model.rules), item: .category(account.id, category),
                         tint: category == .primary ? nil : LuTheme.category(category, rules: model.rules))
@@ -83,7 +85,7 @@ struct SidebarView: View {
         } label: {
             HStack(spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(account.email)
+                    Text(account.label)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -104,10 +106,31 @@ struct SidebarView: View {
                 }
             }
             .contextMenu {
-                Button("Aktualisieren") { Task { await model.refresh(account) } }
-                Button("Neu anmelden (Browser) …") { model.showAddAccount = true }
+                if account.isWeb {
+                    Button("Neu laden") { model.webMail.reload(account.id) }
+                    Button("Erneut anmelden …") { model.reloginWeb(account) }
+                } else {
+                    Button("Aktualisieren") { Task { await model.refresh(account) } }
+                    Button("Neu anmelden (Browser) …") { model.showAddAccount = true }
+                }
                 Divider()
                 Button("Konto entfernen", role: .destructive) { model.removeAccount(account) }
+            }
+        }
+    }
+
+    /// Ordner eines Web-Kontos – Links ins Webmail (§20).
+    @ViewBuilder
+    private func webFolders(_ account: Account) -> some View {
+        let folders = model.provider(for: account)?.web?.sidebarFolders(separateCategories: model.separateCategories) ?? []
+        ForEach(folders) { folder in
+            let category = MailCategory(rawValue: folder.key)
+            if folder.isCategory {
+                row(folder.title, systemImage: category.systemImage(model.rules), item: .web(account.id, folder.key),
+                    tint: category == .primary ? nil : LuTheme.category(category, rules: model.rules))
+            } else {
+                row(folder.title, systemImage: FolderRole(rawValue: folder.key)?.systemImage ?? "folder",
+                    item: .web(account.id, folder.key), showsUnread: false)
             }
         }
     }

@@ -26,6 +26,7 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
+        "web",
         "oauth2",
         "password"
       ],
@@ -80,6 +81,26 @@ public enum SharedResources {
             "text": "Lu-Mail den Zugriff erlauben – fertig."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://accounts.google.com/ServiceLogin?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2Fu%2F0%2F",
+        "homeUrl": "https://mail.google.com/mail/u/0/#inbox",
+        "loggedInPrefixes": [
+          "https://mail.google.com/mail/"
+        ],
+        "folders": {
+          "primary": "https://mail.google.com/mail/u/0/#inbox",
+          "promotions": "https://mail.google.com/mail/u/0/#category/promotions",
+          "social": "https://mail.google.com/mail/u/0/#category/social",
+          "updates": "https://mail.google.com/mail/u/0/#category/updates",
+          "forums": "https://mail.google.com/mail/u/0/#category/forums",
+          "sent": "https://mail.google.com/mail/u/0/#sent",
+          "drafts": "https://mail.google.com/mail/u/0/#drafts",
+          "spam": "https://mail.google.com/mail/u/0/#spam",
+          "trash": "https://mail.google.com/mail/u/0/#trash",
+          "archive": "https://mail.google.com/mail/u/0/#all"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -109,6 +130,7 @@ public enum SharedResources {
         "security": "starttls"
       },
       "authMethods": [
+        "web",
         "oauth2"
       ],
       "oauth": {
@@ -151,6 +173,22 @@ public enum SharedResources {
             "text": "Lu-Mail den Zugriff erlauben – fertig."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://outlook.live.com/owa/?nlp=1",
+        "homeUrl": "https://outlook.live.com/mail/0/inbox",
+        "loggedInPrefixes": [
+          "https://outlook.live.com/mail/"
+        ],
+        "folders": {
+          "primary": "https://outlook.live.com/mail/0/inbox",
+          "sent": "https://outlook.live.com/mail/0/sentitems",
+          "drafts": "https://outlook.live.com/mail/0/drafts",
+          "spam": "https://outlook.live.com/mail/0/junkemail",
+          "trash": "https://outlook.live.com/mail/0/deleteditems",
+          "archive": "https://outlook.live.com/mail/0/archive"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -176,6 +214,7 @@ public enum SharedResources {
         "security": "starttls"
       },
       "authMethods": [
+        "web",
         "password"
       ],
       "passwordLabel": "App-spezifisches Passwort",
@@ -197,6 +236,15 @@ public enum SharedResources {
             "text": "Auf „Im Browser anmelden“ klicken und das Passwort einfügen."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://www.icloud.com/mail/",
+        "homeUrl": "https://www.icloud.com/mail/",
+        "loggedInPrefixes": [],
+        "folders": {
+          "primary": "https://www.icloud.com/mail/"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -220,6 +268,7 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
+        "web",
         "password"
       ],
       "serverCategories": "none",
@@ -248,6 +297,22 @@ public enum SharedResources {
           }
         ],
         "checkLocalPort": 1143
+      },
+      "web": {
+        "loginUrl": "https://account.proton.me/mail",
+        "homeUrl": "https://mail.proton.me/u/0/inbox",
+        "loggedInPrefixes": [
+          "https://mail.proton.me/"
+        ],
+        "folders": {
+          "primary": "https://mail.proton.me/u/0/inbox",
+          "sent": "https://mail.proton.me/u/0/sent",
+          "drafts": "https://mail.proton.me/u/0/drafts",
+          "spam": "https://mail.proton.me/u/0/spam",
+          "trash": "https://mail.proton.me/u/0/trash",
+          "archive": "https://mail.proton.me/u/0/archive"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -273,6 +338,7 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
+        "web",
         "oauth2",
         "password"
       ],
@@ -317,6 +383,21 @@ public enum SharedResources {
             "text": "Auf „Mit Mail.ru anmelden“ klicken und im Browser zustimmen."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://account.mail.ru/login?page=https%3A%2F%2Fe.mail.ru%2Finbox%2F",
+        "homeUrl": "https://e.mail.ru/inbox/",
+        "loggedInPrefixes": [
+          "https://e.mail.ru/"
+        ],
+        "folders": {
+          "primary": "https://e.mail.ru/inbox/",
+          "sent": "https://e.mail.ru/sent/",
+          "drafts": "https://e.mail.ru/drafts/",
+          "spam": "https://e.mail.ru/spam/",
+          "trash": "https://e.mail.ru/trash/"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -345,6 +426,7 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
+        "web",
         "password"
       ],
       "passwordLabel": "App-Passwort",
@@ -371,6 +453,22 @@ public enum SharedResources {
             "text": "Auf „Im Browser anmelden“ klicken."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://passport.yandex.com/auth?retpath=https%3A%2F%2Fmail.yandex.com%2F",
+        "homeUrl": "https://mail.yandex.com/#inbox",
+        "loggedInPrefixes": [
+          "https://mail.yandex.com/",
+          "https://mail.yandex.ru/"
+        ],
+        "folders": {
+          "primary": "https://mail.yandex.com/#inbox",
+          "sent": "https://mail.yandex.com/#sent",
+          "drafts": "https://mail.yandex.com/#draft",
+          "spam": "https://mail.yandex.com/#spam",
+          "trash": "https://mail.yandex.com/#trash"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -398,6 +496,7 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
+        "web",
         "password"
       ],
       "passwordLabel": "GMX-Passwort",
@@ -419,6 +518,18 @@ public enum SharedResources {
             "text": "Auf „Im Browser anmelden“ klicken und dein GMX-Passwort eingeben."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://www.gmx.net/",
+        "homeUrl": "https://www.gmx.net/",
+        "loggedInPrefixes": [
+          "https://navigator-bs.gmx.net/",
+          "https://navigator.gmx.net/"
+        ],
+        "folders": {
+          "primary": "https://www.gmx.net/"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -442,6 +553,7 @@ public enum SharedResources {
         "security": "starttls"
       },
       "authMethods": [
+        "web",
         "password"
       ],
       "passwordLabel": "WEB.DE-Passwort",
@@ -462,6 +574,17 @@ public enum SharedResources {
             "text": "Auf „Im Browser anmelden“ klicken und dein WEB.DE-Passwort eingeben."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://web.de/",
+        "homeUrl": "https://web.de/",
+        "loggedInPrefixes": [
+          "https://navigator.web.de/"
+        ],
+        "folders": {
+          "primary": "https://web.de/"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -480,6 +603,7 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
+        "web",
         "password"
       ],
       "serverCategories": "none",
@@ -505,6 +629,15 @@ public enum SharedResources {
             "text": "Auf „Im Browser anmelden“ klicken."
           }
         ]
+      },
+      "web": {
+        "loginUrl": "https://mail.hostinger.com/",
+        "homeUrl": "https://mail.hostinger.com/",
+        "loggedInPrefixes": [],
+        "folders": {
+          "primary": "https://mail.hostinger.com/"
+        },
+        "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
     {
@@ -632,6 +765,9 @@ public enum SharedResources {
       "https://autoconfig.thunderbird.net/v1.1/{domain}"
     ],
     "timeoutSeconds": 6
+  },
+  "webUserAgent": {
+    "macos": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
   }
 }
 """##

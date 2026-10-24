@@ -168,15 +168,17 @@ private struct AccountRow: View {
             HStack {
                 ProviderDot(providerId: account.providerId)
                 VStack(alignment: .leading) {
-                    Text(account.email)
-                    Text("\(model.provider(for: account)?.name ?? account.providerId) · \(account.authMethod == .oauth2 ? "OAuth (Browser)" : "Passwort (Browser)")")
+                    Text(account.label)
+                    Text("\(model.provider(for: account)?.name ?? account.providerId) · \(Self.methodName(account.authMethod))")
                         .font(.caption)
                         .foregroundStyle(LuTheme.textSecondary)
                 }
                 Spacer()
-                Button(editing ? "Fertig" : "Signatur") {
-                    if editing { model.updateSignature(signature, for: account) }
-                    editing.toggle()
+                if !account.isWeb {
+                    Button(editing ? "Fertig" : "Signatur") {
+                        if editing { model.updateSignature(signature, for: account) }
+                        editing.toggle()
+                    }
                 }
                 Button("Entfernen", role: .destructive) { model.removeAccount(account) }
             }
@@ -188,6 +190,14 @@ private struct AccountRow: View {
             }
         }
         .onAppear { signature = account.signature ?? "" }
+    }
+
+    static func methodName(_ method: AuthMethod) -> String {
+        switch method {
+        case .oauth2: return "OAuth (Browser)"
+        case .password: return "Passwort (Browser)"
+        case .web: return "Web-Konto (Anbieter-Webseite)"
+        }
     }
 }
 

@@ -21,7 +21,7 @@ struct ComposeView: View {
         VStack(spacing: 0) {
             Form {
                 Picker("Von", selection: $draft.accountId) {
-                    ForEach(model.accountsByProvider, id: \.provider.id) { group in
+                    ForEach(model.mailAccountsByProvider, id: \.provider.id) { group in
                         Section(group.provider.name) {
                             ForEach(group.accounts) { account in
                                 Text(account.email).tag(Optional(account.id))

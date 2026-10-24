@@ -4,6 +4,8 @@ import Foundation
 public enum AuthMethod: String, Codable, Sendable {
     case oauth2
     case password
+    /// Anmeldung auf der Webseite des Anbieters, Postfach als Webmail (docs/FUNKTIONEN.md §20).
+    case web
 }
 
 /// Ein E-Mail-Konto. Enthält keine Geheimnisse – die liegen im Schlüsselbund.
@@ -28,6 +30,11 @@ public struct Account: Codable, Hashable, Identifiable, Sendable {
         self.customServers = customServers
         self.signature = signature
     }
+
+    public var isWeb: Bool { authMethod == .web }
+
+    /// Name in der Seitenleiste (Web-Konten kennen ihre Adresse evtl. noch nicht).
+    public var label: String { email.isEmpty ? displayName : email }
 
     public func imapEndpoint(_ provider: Provider) -> ServerEndpoint { customServers?.imap ?? provider.imap }
     public func smtpEndpoint(_ provider: Provider) -> ServerEndpoint { customServers?.smtp ?? provider.smtp }

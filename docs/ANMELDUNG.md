@@ -1,7 +1,22 @@
 # Anmeldung in Lu-Mail
 
-Jede Anmeldung läuft über deinen **Standardbrowser** (Safari, Chrome, Firefox, Edge …) – nie über ein
-eingebettetes Fenster. Es gibt zwei Wege:
+## Der einfache Weg: Web-Konto (empfohlen)
+
+**Konto hinzufügen → Anbieter wählen → „Bei <Anbieter> anmelden“.** Lu-Mail öffnet die **echte Anmeldeseite**
+des Anbieters (Gmail, Outlook, Proton Mail, Mail.ru, Yandex, iCloud, GMX, WEB.DE, Hostinger) in einem eigenen
+Fenster. Du meldest dich dort ganz normal mit deinem Passwort an – auch mit Zwei-Faktor oder Bestätigungscode.
+
+- **Kein App-Passwort, keine Proton Bridge, keine OAuth-Einrichtung nötig.**
+- Lu-Mail speichert dein Passwort nicht; nur die Anmelde-Cookies des Anbieters liegen in einem eigenen Speicher
+  pro Konto (mehrere Konten desselben Anbieters gleichzeitig möglich). Konto entfernen löscht ihn.
+- Dein Postfach erscheint links unter Anbieter → Konto mit seinen Ordnern (bei Gmail z. B. Posteingang, Werbung,
+  Soziale Netzwerke, Updates, Foren). Neue Mails zeigt Lu-Mail als Zahl und Mitteilung an.
+- Details: docs/FUNKTIONEN.md §20.
+
+## Erweitert: per IMAP verbinden
+
+Im Assistenten unter **„Erweitert: per IMAP verbinden“**. Dann laufen Mails über IMAP direkt in Lu-Mails eigener
+Liste (Alle Posteingänge, Regeln, Suche …). Die Anmeldung läuft dabei über deinen **Standardbrowser**:
 
 | Anbieter | Weg ohne Einrichtung | Direkte Anmeldung beim Anbieter |
 |----------|----------------------|---------------------------------|
