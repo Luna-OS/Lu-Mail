@@ -54,7 +54,11 @@ public sealed class MessageItem : ObservableObject
         : "";
     public Visibility InfoVisibility => InfoText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    public string Key => Summary.Key;
+    /// <summary>Lu-Ansicht eines Web-Kontos (§21): Eintrag aus dem Webmail, sonst null.</summary>
+    public LuMail.Core.Catalog.WebReaderItem? WebItem { get; init; }
+
+    public string Key => WebItem is not null ? $"web|{Account.Id}|{WebItem.Id}" : Summary.Key;
+    public Visibility AttachmentVisibility => WebItem?.Attachment == true ? Visibility.Visible : Visibility.Collapsed;
     public string Sender => Outbox is not null ? "An: " + string.Join(", ", Outbox.Recipients)
         : string.IsNullOrWhiteSpace(Summary.FromDisplay) ? "(Unbekannter Absender)" : Summary.FromDisplay;
     public string Subject => string.IsNullOrWhiteSpace(Summary.Subject) ? "(Kein Betreff)" : Summary.Subject;
@@ -67,6 +71,7 @@ public sealed class MessageItem : ObservableObject
     {
         get
         {
+            if (WebItem is not null) return WebItem.ShortDate;
             var local = Summary.Date.ToLocalTime();
             var now = DateTimeOffset.Now;
             if (local.Date == now.Date) return local.ToString("HH:mm", German);
@@ -76,7 +81,9 @@ public sealed class MessageItem : ObservableObject
         }
     }
 
-    public string FullDateText => Summary.Date.ToLocalTime().ToString("dddd, d. MMMM yyyy, HH:mm", German);
+    public string FullDateText => WebItem is not null
+        ? (WebItem.DateTitle.Length > 0 ? WebItem.DateTitle : WebItem.Date)
+        : Summary.Date.ToLocalTime().ToString("dddd, d. MMMM yyyy, HH:mm", German);
 
     public bool Seen
     {

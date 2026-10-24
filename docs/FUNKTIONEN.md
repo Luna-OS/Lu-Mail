@@ -232,3 +232,41 @@ Das ist ab sofort der **Standardweg** im Assistenten; IMAP bleibt als „Erweite
   Downloads (Anhänge) landen im Download-Ordner.
 - „Alle Posteingänge“, Ungelesen, Markiert, Suche, Regeln, Verfassen usw. betreffen nur IMAP-Konten. „Neue E-Mail“
   ohne IMAP-Konto öffnet den Posteingang des ersten Web-Kontos mit Hinweis „Schreibe direkt im Postfach (Verfassen)“.
+
+## 21. Lu-Ansicht für Web-Konten
+
+Web-Konten (§20) zeigen ihre Mails standardmäßig **in Lu-Mails eigener Oberfläche** (Liste + Lesebereich im
+Lu-Theme) statt der Webseite. Die Webseite des Anbieters lädt dafür unsichtbar im Hintergrund (derselbe Browser
+mit demselben Cookie-Speicher wie in §20); `shared/webmail/lu-webmail.js` liest Liste und geöffnete Nachricht aus.
+
+**Daten:** `web.reader` in `shared/providers.json` (`gmail`, `proton`, `mailru`). Anbieter ohne `reader` zeigen nur
+die Webseite. Das Skript ist auf beiden Plattformen eingebettet (macOS: `SharedResources.webmailJS`, Windows:
+EmbeddedResource) und wird vor jedem Aufruf mitgeschickt (es definiert `window.LuWebmail` nur einmal); macOS führt es
+in einer eigenen Content-World aus (`WKContentWorld.defaultClient`), Windows per `ExecuteScriptAsync`
+(Ergebnis ist ein JSON-String, den WebView2 noch einmal als JSON-String kodiert).
+
+**Aufrufe** (Ergebnis jeweils JSON, siehe Kopf von `lu-webmail.js`):
+- `LuWebmail.list(reader)` → `state` `ok` (mit `items`), `loading` (Liste noch nicht da), `login` (Passwortfeld
+  sichtbar = abgemeldet), `unsupported`, `error`.
+- `LuWebmail.open(reader, id)` → klickt den Eintrag im Webmail an (`ok`/`missing`).
+- `LuWebmail.message(reader)` → `subject` und `parts` (`from`, `fromEmail`, `to`, `date`, `html`) der geöffneten
+  Nachricht bzw. Unterhaltung.
+
+**Ablauf**
+1. Ordner wählen → der Hintergrund-Browser geht zur Ordneradresse (steht er in einer Nachricht dieses Ordners,
+   also Adresse beginnt mit der Ordneradresse, genügt `history.back()`), dann alle 0,7 s `list` bis `ok` –
+   eine leere Liste gilt erst nach 4 s als „leer“. Nach 20 s ohne `ok` bzw. bei `error`: Hinweis „Die Lu-Ansicht
+   kann <Anbieter> gerade nicht lesen“ und automatisch die Webseiten-Ansicht. `login` → Webseiten-Ansicht
+   (dort neu anmelden).
+2. Liste im Stil der IMAP-Liste: Absender (fett + Punkt wenn ungelesen), Betreff, Vorschau, Datum (Text aus dem
+   Webmail), Büroklammer bei Anhang. Neu laden über den Button, beim Zurückkehren zum Ordner und jede Minute,
+   solange die Ansicht offen ist.
+3. Nachricht wählen → `open`, dann alle 0,5 s `message` bis `ok` (max. 15 s). Der Lesebereich zeigt Betreff,
+   pro Teil Absender, Empfänger, Datum und den Inhalt über dieselbe HTML-Aufbereitung wie IMAP-Mails
+   (ohne JavaScript, externe Bilder blockiert mit „Externe Inhalte laden“). Der Eintrag gilt danach als gelesen
+   (der Anbieter markiert ihn beim Öffnen selbst).
+4. Antworten, Weiterleiten, Löschen usw.: Button „In der Webseite öffnen“ – schaltet auf die Webseiten-Ansicht, in
+   der genau diese Nachricht schon offen ist. „Neue E-Mail“ öffnet die Webseite (Verfassen).
+- Umschalter in der Leiste oben: **Lu-Ansicht / Webseite** (pro Konto gemerkt; Standard Lu-Ansicht).
+- Aufrufe pro Konto laufen nacheinander (eine Warteschlange), damit Liste und Nachricht sich nicht stören.
+- Tests: `node scripts/test-webmail.js` (nachgebaute Seiten in Chromium; die CI prüft die Syntax mit `node --check`).

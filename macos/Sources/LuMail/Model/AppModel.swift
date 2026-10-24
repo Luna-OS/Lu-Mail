@@ -123,6 +123,9 @@ final class AppModel {
     private var sessions: [UUID: MailAccountSession] = [:]
     /// Eingebettete Webmail-Postfächer der Web-Konten (§20).
     let webMail = WebMailService()
+    /// Web-Konten, die die Webseite statt der Lu-Ansicht zeigen (§21) – gemerkt bzw. nur für diese Sitzung.
+    var webShowsSite: Set<UUID> = Set((AppModel.defaults.stringArray(forKey: "webShowsSite") ?? []).compactMap(UUID.init(uuidString:)))
+    var webSiteForSession: Set<UUID> = []
     /// Im Seitentitel gefundene Adressen von Konten, deren Anmeldung noch läuft.
     private var pendingWebEmails: [UUID: String] = [:]
     private var refreshTimer: Timer?
@@ -231,6 +234,35 @@ final class AppModel {
         saveAccounts()
         selection = .web(id, "primary")
         return account
+    }
+
+    /// Zeigt das Konto als Webseite statt in der Lu-Ansicht?
+    func showsWebsite(_ account: Account) -> Bool {
+        provider(for: account)?.web?.reader == nil || webShowsSite.contains(account.id) || webSiteForSession.contains(account.id)
+    }
+
+    func setShowsWebsite(_ on: Bool, for accountId: UUID) {
+        if on { webShowsSite.insert(accountId) } else { webShowsSite.remove(accountId) }
+        webSiteForSession.remove(accountId)
+        AppModel.defaults.set(webShowsSite.map(\.uuidString), forKey: "webShowsSite")
+    }
+
+    /// Die Lu-Ansicht kann das Webmail gerade nicht lesen → für diese Sitzung die Webseite zeigen.
+    func fallBackToWebsite(_ accountId: UUID, reason: String) {
+        webSiteForSession.insert(accountId)
+        banner = reason
+    }
+
+    /// „Neue E-Mail“ bei Web-Konten: Verfassen auf der Webseite.
+    func composeOnWebsite(_ account: Account) {
+        guard let web = provider(for: account)?.web else { return }
+        if selection?.accountId != account.id { selection = .web(account.id, "primary") }
+        webSiteForSession.insert(account.id)
+        if let compose = web.composeUrl {
+            webMail.navigate(account.id, config: web, to: compose)
+        } else {
+            banner = "Schreibe direkt im Postfach – oben auf „Verfassen“ bzw. „Schreiben“ klicken."
+        }
     }
 
     /// Erneut anmelden (Web-Konto): Anmeldeseite im Postfach des Kontos zeigen.
@@ -910,11 +942,13 @@ final class AppModel {
             showAddAccount = true
             return
         }
+        if case .web(let accountId, _) = selection, let webAccount = account(id: accountId) {
+            composeOnWebsite(webAccount)
+            return
+        }
         guard let firstMailAccount = mailAccounts.first else {
             // Nur Web-Konten: im Webmail selbst schreiben (§20).
-            let webAccount = selection?.accountId.flatMap { account(id: $0) } ?? accounts[0]
-            selection = .web(webAccount.id, "primary")
-            banner = "Schreibe direkt im Postfach – oben auf „Verfassen“ bzw. „Schreiben“ klicken."
+            composeOnWebsite(accounts[0])
             return
         }
         let accountId = selection?.accountId.flatMap { account(id: $0) }.flatMap { $0.isWeb ? nil : $0.id } ?? firstMailAccount.id

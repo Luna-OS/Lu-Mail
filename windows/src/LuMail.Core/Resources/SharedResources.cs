@@ -30,6 +30,13 @@ public static class SharedResources
     public static IEnumerable<string> ResourceNames =>
         typeof(SharedResources).Assembly.GetManifestResourceNames().Where(n => n.StartsWith(Prefix, StringComparison.Ordinal));
 
+    public const string WebmailScriptFile = "lu-webmail.js";
+
+    private static readonly Lazy<string> WebmailScriptText = new(() => ReadText(WebmailScriptFile));
+
+    /// <summary>Web-Leser <c>shared/webmail/lu-webmail.js</c> (definiert <c>window.LuWebmail</c>).</summary>
+    public static string WebmailScript => WebmailScriptText.Value;
+
     public static string LoginPageTemplate => ReadText(LoginPageFile);
     public static string DonePageTemplate => ReadText(DonePageFile);
 }

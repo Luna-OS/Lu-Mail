@@ -174,6 +174,9 @@ public sealed class AppSettings
     /// <summary>Akzentfarbe: Schlüssel aus lu-theme.json → accents, leer = Akzent der Variante.</summary>
     public string Accent { get; set; } = "";
 
+    /// <summary>Web-Konten: Ansicht pro Konto-Id, "lu" (Standard) oder "web" (§21).</summary>
+    public Dictionary<string, string> WebViewModes { get; set; } = new();
+
     public static AppSettings Load(string path)
     {
         try

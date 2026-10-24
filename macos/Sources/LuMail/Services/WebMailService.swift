@@ -25,6 +25,22 @@ final class WebMailService {
 
     @ObservationIgnored private var entries: [UUID: Entry] = [:]
 
+    /// Lu-Ansicht (§21): gelesene Listen je Konto und Ordner (`key(_:_:)`).
+    private(set) var readerItems: [String: [WebReader.Item]] = [:]
+    private(set) var readerLoading: Set<String> = []
+    /// Warteschlange je Konto, damit Liste und Nachricht nicht gleichzeitig im Browser arbeiten.
+    @ObservationIgnored private var queues: [UUID: Task<Void, Never>] = [:]
+    /// Konten, deren Seite beim nächsten Umschalten auf die Webseite stehen bleiben soll (offene Nachricht, Verfassen).
+    @ObservationIgnored private var holdPage: Set<UUID> = []
+
+    enum ReaderOutcome: Sendable {
+        case items([WebReader.Item])
+        case needsLogin
+        case failed
+    }
+
+    static func key(_ accountId: UUID, _ folder: String) -> String { "\(accountId.uuidString)|\(folder)" }
+
     private final class Entry {
         let webView: WKWebView
         let config: WebConfig
@@ -56,7 +72,8 @@ final class WebMailService {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         // Auch im Hintergrund weiterlaufen, damit der Ungelesen-Zähler aktuell bleibt.
         configuration.preferences.inactiveSchedulingPolicy = WKPreferences.InactiveSchedulingPolicy.none
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        // Feste Größe, damit das Webmail auch unsichtbar im Hintergrund vollständig gerendert wird.
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: configuration)
         webView.customUserAgent = ProviderCatalog.shared.webUserAgent["macos"]
         webView.allowsBackForwardNavigationGestures = true
 
@@ -124,8 +141,10 @@ final class WebMailService {
     /// Zeigt einen Ordner des Postfachs (z. B. `promotions` → Gmail-Tab „Werbung“).
     func open(_ accountId: UUID, config: WebConfig, folder: String) {
         let entry = entry(for: accountId, config: config)
+        if holdPage.remove(accountId) != nil { return }
         let target = config.folderURL(folder)
-        if entry.webView.url?.absoluteString == target { return }
+        // Schon in diesem Ordner (auch in einer seiner Nachrichten)?
+        if entry.webView.url?.absoluteString.hasPrefix(target) == true { return }
         if entry.pendingURL == target, entry.webView.isLoading || entry.webView.url == nil { return }
         load(entry, target)
     }
@@ -135,6 +154,12 @@ final class WebMailService {
     func goForward(_ accountId: UUID) { entries[accountId]?.webView.goForward() }
 
     func currentURL(_ accountId: UUID) -> URL? { entries[accountId]?.webView.url }
+
+    /// Eine Seite des Anbieters öffnen (z. B. „Verfassen“).
+    func navigate(_ accountId: UUID, config: WebConfig, to url: String) {
+        holdPage.insert(accountId)
+        load(entry(for: accountId, config: config), url)
+    }
 
     /// Erneut anmelden: Anmeldeseite im bestehenden Speicher öffnen.
     func showLogin(_ accountId: UUID, config: WebConfig) {
@@ -154,6 +179,9 @@ final class WebMailService {
         loading.remove(accountId)
         canGoBack.remove(accountId)
         canGoForward.remove(accountId)
+        queues[accountId] = nil
+        let prefix = accountId.uuidString + "|"
+        readerItems = readerItems.filter { !$0.key.hasPrefix(prefix) }
         onUnreadChanged?()
         // Der Speicher lässt sich erst löschen, wenn kein Browser ihn mehr benutzt.
         Task {
@@ -164,6 +192,124 @@ final class WebMailService {
                     return
                 } catch {
                     continue
+                }
+            }
+        }
+    }
+
+    // MARK: Lu-Ansicht (§21)
+
+    /// Liest die Nachrichtenliste eines Ordners aus dem Webmail.
+    func loadList(_ accountId: UUID, config: WebConfig, folder: String) async -> ReaderOutcome {
+        guard let reader = config.reader else { return .failed }
+        let key = Self.key(accountId, folder)
+        readerLoading.insert(key)
+        defer { readerLoading.remove(key) }
+        return await serial(accountId) { [self] in
+            let entry = entry(for: accountId, config: config)
+            let target = config.folderURL(folder)
+            let current = entry.webView.url?.absoluteString ?? ""
+            if current != target {
+                if current.hasPrefix(target) {
+                    // In einer Nachricht dieses Ordners: zurück zur Liste, ohne die Seite neu zu laden.
+                    _ = await evaluate(entry, "history.back(); 'ok'")
+                    try? await Task.sleep(for: .milliseconds(800))
+                } else if !(entry.pendingURL == target && entry.webView.isLoading) {
+                    load(entry, target)
+                }
+            }
+            let start = Date()
+            while Date().timeIntervalSince(start) < 20 {
+                try? await Task.sleep(for: .milliseconds(700))
+                let elapsed = Date().timeIntervalSince(start)
+                let url = entry.webView.url?.absoluteString ?? ""
+                if elapsed > 6, !entry.webView.isLoading, !config.loggedInPrefixes.isEmpty, !config.isLoggedIn(url: url) {
+                    return .needsLogin
+                }
+                guard let result = WebReader.decode(WebReader.ListResult.self,
+                                                    from: await evaluate(entry, WebReader.listScript(reader: reader))) else { continue }
+                switch result.state {
+                case .ok where !result.items.isEmpty || elapsed > 4:
+                    readerItems[key] = result.items
+                    return .items(result.items)
+                case .login:
+                    return .needsLogin
+                case .error, .unsupported:
+                    return .failed
+                default:
+                    continue
+                }
+            }
+            return .failed
+        }
+    }
+
+    /// Öffnet eine Nachricht im Webmail und liest ihren Inhalt.
+    func loadMessage(_ accountId: UUID, config: WebConfig, item: WebReader.Item) async -> WebReader.MessageResult? {
+        guard let reader = config.reader else { return nil }
+        return await serial(accountId) { [self] in
+            let entry = entry(for: accountId, config: config)
+            let opened = WebReader.decode(WebReader.ActionResult.self,
+                                          from: await evaluate(entry, WebReader.openScript(reader: reader, id: item.id)))
+            guard opened?.state == .ok else { return nil }
+            let start = Date()
+            var latest: WebReader.MessageResult?
+            while Date().timeIntervalSince(start) < 15 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let message = WebReader.decode(WebReader.MessageResult.self,
+                                                     from: await evaluate(entry, WebReader.messageScript(reader: reader))),
+                      message.state == .ok, !message.parts.isEmpty else { continue }
+                latest = message
+                // Bei Ansichten mit Liste und Nachricht nebeneinander kann kurz noch die vorige Nachricht zu sehen sein.
+                if Self.subjectsMatch(item.subject, message.subject) { break }
+            }
+            if latest != nil { markRead(accountId, id: item.id) }
+            return latest
+        }
+    }
+
+    /// Öffnet eine Nachricht im Webmail (für „In der Webseite öffnen“).
+    func openInPage(_ accountId: UUID, config: WebConfig, item: WebReader.Item) async {
+        guard let reader = config.reader else { return }
+        await serial(accountId) { [self] in
+            let entry = entry(for: accountId, config: config)
+            holdPage.insert(accountId)
+            _ = await evaluate(entry, WebReader.openScript(reader: reader, id: item.id))
+        }
+    }
+
+    private func markRead(_ accountId: UUID, id: String) {
+        let prefix = accountId.uuidString + "|"
+        for (key, items) in readerItems where key.hasPrefix(prefix) {
+            if let index = items.firstIndex(where: { $0.id == id }), items[index].unread {
+                readerItems[key]?[index].unread = false
+            }
+        }
+    }
+
+    static func subjectsMatch(_ expected: String, _ actual: String) -> Bool {
+        let a = expected.lowercased().trimmingCharacters(in: .whitespaces)
+        let b = actual.lowercased().trimmingCharacters(in: .whitespaces)
+        return a.isEmpty || b.isEmpty || a.contains(b) || b.contains(a)
+    }
+
+    private func serial<T: Sendable>(_ accountId: UUID, _ operation: @escaping @MainActor () async -> T) async -> T {
+        let previous = queues[accountId]
+        let task = Task { @MainActor () -> T in
+            _ = await previous?.value
+            return await operation()
+        }
+        queues[accountId] = Task { @MainActor in _ = await task.value }
+        return await task.value
+    }
+
+    /// Führt JavaScript in einer eigenen Content-World aus (die Webseite sieht den Leser nicht).
+    private func evaluate(_ entry: Entry, _ script: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            entry.webView.evaluateJavaScript(script, in: nil, in: .defaultClient) { result in
+                switch result {
+                case .success(let value): continuation.resume(returning: value as? String)
+                case .failure: continuation.resume(returning: nil)
                 }
             }
         }
@@ -318,27 +464,41 @@ final class WebMailCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WK
 }
 
 /// Bettet einen (wiederverwendeten) WKWebView in SwiftUI ein.
+/// `hidden`: unsichtbar und nicht anklickbar, aber im Fenster – so rendert das Webmail für die Lu-Ansicht weiter.
 struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
+    var hidden = false
 
-    func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+    final class Container: NSView {
+        var passthrough = false
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            passthrough ? nil : super.hitTest(point)
+        }
+    }
+
+    func makeNSView(context: Context) -> Container {
+        let container = Container()
         attach(to: container)
         return container
     }
 
-    func updateNSView(_ container: NSView, context: Context) {
+    func updateNSView(_ container: Container, context: Context) {
         if webView.superview !== container {
             container.subviews.forEach { $0.removeFromSuperview() }
             attach(to: container)
         }
+        container.passthrough = hidden
+        webView.alphaValue = hidden ? 0 : 1
     }
 
-    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+    static func dismantleNSView(_ container: Container, coordinator: ()) {
         container.subviews.forEach { $0.removeFromSuperview() }
     }
 
-    private func attach(to container: NSView) {
+    private func attach(to container: Container) {
+        container.passthrough = hidden
+        webView.alphaValue = hidden ? 0 : 1
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
         container.addSubview(webView)

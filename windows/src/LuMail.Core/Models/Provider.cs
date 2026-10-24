@@ -89,6 +89,10 @@ public sealed class WebConfig
     /// <summary>Ordner-Schlüssel (primary, promotions, social, updates, forums, sent, drafts, archive, spam, trash) → URL.</summary>
     public Dictionary<string, string> Folders { get; set; } = new();
     public string? UnreadTitlePattern { get; set; }
+    /// <summary>Web-Leser für die Lu-Ansicht (§21): "gmail", "proton", "mailru"; null = nur Webseite.</summary>
+    public string? Reader { get; set; }
+    /// <summary>Adresse zum Verfassen einer neuen E-Mail im Webmail (optional).</summary>
+    public string? ComposeUrl { get; set; }
 }
 
 /// <summary><c>providers.json → setup</c>.</summary>

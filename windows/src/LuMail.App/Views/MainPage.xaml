@@ -113,6 +113,8 @@
                         <FontIcon Grid.Column="1" FontSize="12" Foreground="{ThemeResource LuDanger}" Glyph="&#xE7C1;"
                                   Visibility="{x:Bind FlagVisibility, Mode=OneWay}" />
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                            <FontIcon VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextMuted}" Glyph="&#xE723;"
+                                      Visibility="{x:Bind AttachmentVisibility}" />
                             <Border Padding="6,0,6,1" VerticalAlignment="Center" Background="{ThemeResource LuSurfaceSelected}"
                                     CornerRadius="8" Visibility="{x:Bind ThreadVisibility}">
                                 <TextBlock FontSize="11" Foreground="{ThemeResource LuTextSecondary}" Text="{x:Bind ThreadCountText}" />
@@ -239,7 +241,15 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
+                    <Button x:Name="LuViewButton" Grid.Column="4" Click="OnLuModeClick" Visibility="Collapsed"
+                            ToolTipService.ToolTip="Lu-Ansicht / Webseite: Mails in Lu-Mails eigener Liste anzeigen">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="13" Glyph="&#xE708;" />
+                            <TextBlock FontSize="12" Text="Lu-Ansicht" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="WebBackButton" Click="OnWebBackClick" ToolTipService.ToolTip="Zurück">
                         <FontIcon FontSize="13" Glyph="&#xE72B;" />
                     </Button>
@@ -278,6 +288,13 @@
                             <TextBlock x:Name="OfflineText" FontSize="12" Foreground="{ThemeResource LuDanger}"
                                        Text="Offline – Anzeige aus dem Cache" Visibility="Collapsed" />
                         </StackPanel>
+                        <Button x:Name="WebsiteButton" Grid.Column="1" Click="OnWebsiteModeClick" Visibility="Collapsed"
+                                ToolTipService.ToolTip="Lu-Ansicht / Webseite: das Webmail des Anbieters anzeigen">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="13" Glyph="&#xE774;" />
+                                <TextBlock FontSize="12" Text="Webseite" />
+                            </StackPanel>
+                        </Button>
                         <ToggleButton x:Name="ConversationToggle" Grid.Column="1" Click="OnConversationToggleClick"
                                       ToolTipService.ToolTip="Nachrichten als Konversationen gruppieren">
                             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -457,6 +474,16 @@
 
                     <!-- Hinweise: Phishing, Geplant, Erinnerung, externe Inhalte/Tracker -->
                     <StackPanel Grid.Row="2" Spacing="4">
+                    <Grid x:Name="WebReaderBar" Margin="24,4,24,0" Padding="12,8,8,8" Background="{ThemeResource LuSurfaceHover}"
+                          CornerRadius="{StaticResource LuRadiusMedium}" ColumnSpacing="8" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                                   Text="Antworten, Weiterleiten, Löschen usw. erledigst du im Webmail des Anbieters." />
+                        <Button Grid.Column="1" Click="OnOpenInWebsiteClick" Content="In der Webseite öffnen" Style="{StaticResource AccentButtonStyle}" />
+                    </Grid>
                     <InfoBar x:Name="PhishingBar" Margin="24,4,24,0" IsClosable="True" IsOpen="False" Severity="Warning"
                              Title="Vorsicht: möglicher Phishing-Versuch" />
                     <Grid x:Name="ScheduledBar" Margin="24,4,24,0" Padding="12,8,8,8" Background="{ThemeResource LuSurfaceHover}"

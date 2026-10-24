@@ -645,7 +645,7 @@ public sealed class MainViewModel : ObservableObject
     private void SetList(List<MessageItem> list)
     {
         var flat = list.Where(m => !m.IsHeader).OrderByDescending(SortDate).ToList();
-        _all = _s.Settings.Conversations && Selected?.Target is not (SidebarTarget.Reminders or SidebarTarget.Scheduled)
+        _all = _s.Settings.Conversations && Selected?.Target is not (SidebarTarget.Reminders or SidebarTarget.Scheduled or SidebarTarget.Web)
             ? GroupConversations(flat)
             : flat;
         ApplyFilter();
@@ -654,6 +654,25 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Sortierdatum: Erinnerungen erscheinen nach dem Wiederauftauchen oben.</summary>
     private DateTimeOffset SortDate(MessageItem m) =>
         _resurfaced.TryGetValue(m.Key, out var at) && at > m.Summary.Date ? at : m.Summary.Date;
+
+    /// <summary>§21 Lu-Ansicht: Einträge aus dem Webmail eines Web-Kontos anzeigen (Reihenfolge wie im Webmail).</summary>
+    public void SetWebList(Account account, Provider provider, string folderKey, IReadOnlyList<LuMail.Core.Catalog.WebReaderItem> items)
+    {
+        _serverResults.Clear();
+        _all = items.Select((w, i) => new MessageItem(new MessageSummary
+        {
+            AccountId = account.Id,
+            FolderPath = "web:" + folderKey,
+            Uid = (uint)(i + 1),
+            FromName = w.From,
+            FromAddress = w.FromEmail,
+            Subject = w.Subject,
+            Preview = w.Snippet,
+            Seen = !w.Unread,
+            Date = DateTimeOffset.Now.AddSeconds(-i),
+        }, account, provider) { WebItem = w }).ToList();
+        ApplyFilter();
+    }
 
     /// <summary>§8: Konversationen – Eintrag = neueste Nachricht, mit Anzahl und Teilnehmern.</summary>
     private static List<MessageItem> GroupConversations(List<MessageItem> flat)
@@ -764,7 +783,7 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>Alle Einzelnachrichten hinter Listeneinträgen (Konversationen aufgelöst).</summary>
     public static IReadOnlyList<MessageItem> Expand(IEnumerable<MessageItem> items) =>
-        items.Where(i => !i.IsHeader && i.Outbox is null).SelectMany(i => i.ThreadItems ?? new[] { i }).Distinct().ToList();
+        items.Where(i => !i.IsHeader && i.Outbox is null && i.WebItem is null).SelectMany(i => i.ThreadItems ?? new[] { i }).Distinct().ToList();
 
     public async Task<MessageDetail> OpenAsync(MessageItem item)
     {

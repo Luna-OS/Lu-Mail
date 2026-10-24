@@ -798,3 +798,110 @@ public class WebAccountSetupTests
         }
     }
 }
+
+public class WebReaderTests
+{
+    private static readonly ProviderCatalog Catalog = ProviderCatalog.LoadEmbedded();
+
+    private static string Wrap(string json) => System.Text.Json.JsonSerializer.Serialize(json); // wie ExecuteScriptAsync
+
+    [Fact]
+    public void ReaderConfigAndComposeUrl()
+    {
+        Assert.Equal("gmail", Catalog.Get("gmail").Web!.Reader);
+        Assert.Equal("proton", Catalog.Get("proton").Web!.Reader);
+        Assert.Equal("mailru", Catalog.Get("mailru").Web!.Reader);
+        Assert.Null(Catalog.Get("outlook").Web!.Reader);
+        Assert.False(string.IsNullOrEmpty(Catalog.Get("gmail").Web!.ComposeUrl));
+        Assert.Null(Catalog.Get("proton").Web!.ComposeUrl);
+    }
+
+    [Fact]
+    public void ScriptsEmbedReaderAndQuoteSafely()
+    {
+        Assert.Contains("window.LuWebmail", LuMail.Core.Resources.SharedResources.WebmailScript);
+        var s = WebReader.OpenScript("gmail", "id\"');alert(1)//\n");
+        Assert.Contains("window.LuWebmail", s);
+        Assert.EndsWith("\n;LuWebmail.open(\"gmail\", \"id\\u0022\\u0027);alert(1)//\\n\")", s);
+        Assert.EndsWith(";LuWebmail.list(\"proton\")", WebReader.ListScript("proton"));
+        Assert.EndsWith(";LuWebmail.message(\"mailru\")", WebReader.MessageScript("mailru"));
+    }
+
+    [Fact]
+    public void DecodesDoubleEncodedResults_WithDefaults()
+    {
+        var list = WebReader.DecodeList(Wrap("""{"state":"ok","items":[{"id":"a1","from":"Anna","subject":"Hi","unread":true,"attachment":true},{"from":"ohne id"},{"id":"b2"}]}"""))!;
+        Assert.Equal(WebReaderState.Ok, list.State);
+        Assert.Equal(2, list.Items.Count);
+        Assert.True(list.Items[0].Unread && list.Items[0].Attachment);
+        Assert.Equal(("(unbekannt)", "(kein Betreff)", ""), (list.Items[1].Sender, list.Items[1].DisplaySubject, list.Items[1].ShortDate));
+
+        Assert.Null(WebReader.DecodeList("null"));
+        Assert.Null(WebReader.DecodeList(null));
+        Assert.Equal(WebReaderState.Error, WebReader.DecodeList(Wrap("""{"state":"weird"}"""))!.State);
+        Assert.Equal(WebReaderState.Login, WebReader.DecodeList(Wrap("""{"state":"login"}"""))!.State);
+        Assert.Equal(WebReaderState.Ok, WebReader.DecodeList("""{"state":"ok","items":[]}""")!.State); // nicht doppelt kodiert
+
+        var msg = WebReader.DecodeMessage(Wrap("""{"state":"ok","subject":"Betreff","parts":[{"from":"Anna","fromEmail":"a@x.de","to":"ich","date":"10:12","html":"<p>Hallo</p>"}]}"""))!;
+        Assert.Equal(("Betreff", "Anna", "<p>Hallo</p>"), (msg.Subject, msg.Parts[0].Sender, msg.Parts[0].Html));
+        Assert.Equal(WebReaderState.Missing, WebReader.DecodeState(Wrap("""{"state":"missing"}""")));
+    }
+
+    [Theory]
+    [InlineData("https://mail.google.com/mail/u/0/#inbox", "https://mail.google.com/mail/u/0/#inbox", WebFolderNavigation.None)]
+    [InlineData("https://mail.google.com/mail/u/0/#inbox/FMfcg123", "https://mail.google.com/mail/u/0/#inbox", WebFolderNavigation.HistoryBack)]
+    [InlineData("https://mail.google.com/mail/u/0/#sent", "https://mail.google.com/mail/u/0/#inbox", WebFolderNavigation.Navigate)]
+    [InlineData(null, "https://e.mail.ru/inbox/", WebFolderNavigation.Navigate)]
+    public void FolderNavigation(string? current, string folder, WebFolderNavigation expected) =>
+        Assert.Equal(expected, WebReader.NavigationFor(current, folder));
+
+    private static readonly WebReaderTiming Fast = new(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(150),
+        TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(200));
+
+    private static Func<string, Task<string?>> Sequence(params string?[] results)
+    {
+        var i = 0;
+        return _ => Task.FromResult<string?>(results[Math.Min(i++, results.Length - 1)] is { } r ? Wrap(r) : "null");
+    }
+
+    [Fact]
+    public async Task PollList_WaitsForItems_EmptyOnlyAfterDelay_LoginAndTimeout()
+    {
+        var ok = await WebReader.PollListAsync(Sequence("""{"state":"loading"}""", """{"state":"ok","items":[]}""", """{"state":"ok","items":[{"id":"1"}]}"""), "gmail", Fast);
+        Assert.Equal((WebReaderOutcome.Ok, 1), (ok.Outcome, ok.Items.Count));
+
+        var empty = await WebReader.PollListAsync(Sequence("""{"state":"ok","items":[]}"""), "gmail", Fast);
+        Assert.Equal((WebReaderOutcome.Ok, 0), (empty.Outcome, empty.Items.Count));
+
+        Assert.Equal(WebReaderOutcome.NeedsLogin, (await WebReader.PollListAsync(Sequence("""{"state":"login"}"""), "gmail", Fast)).Outcome);
+        Assert.Equal(WebReaderOutcome.Failed, (await WebReader.PollListAsync(Sequence("""{"state":"error"}"""), "gmail", Fast)).Outcome);
+        Assert.Equal(WebReaderOutcome.Failed, (await WebReader.PollListAsync(Sequence(null, """{"state":"loading"}"""), "gmail", Fast)).Outcome);
+    }
+
+    [Fact]
+    public async Task OpenAndPollMessage()
+    {
+        var m = await WebReader.OpenAndPollMessageAsync(Sequence("""{"state":"ok"}""", """{"state":"loading"}""", """{"state":"ok","subject":"S","parts":[]}"""), "gmail", "1", Fast);
+        Assert.Equal("S", m!.Subject);
+        Assert.Null(await WebReader.OpenAndPollMessageAsync(Sequence("""{"state":"missing"}"""), "gmail", "1", Fast));
+        Assert.Null(await WebReader.OpenAndPollMessageAsync(Sequence("""{"state":"ok"}""", """{"state":"loading"}"""), "gmail", "1", Fast));
+    }
+
+    [Fact]
+    public void PrepareHtml_CspAndParts()
+    {
+        var html = WebReader.PrepareHtml(new WebMessageResult
+        {
+            State = WebReaderState.Ok, Subject = "S",
+            Parts =
+            {
+                new WebReaderPart { From = "Anna", FromEmail = "a@x.de", To = "Ich <i@y.de>", Date = "Gestern", Html = "<p>Eins</p>" },
+                new WebReaderPart { From = "Bob", Date = "10:00", Html = "<p>Zwei</p>" },
+            },
+        }, allowExternalContent: false);
+        Assert.StartsWith("<!doctype html><meta http-equiv=\"Content-Security-Policy\" content=\"default-src &#39;none&#39;; img-src data: cid:", html);
+        Assert.Contains("<details><summary>Anna &lt;a@x.de&gt;<span>Gestern</span>", html);
+        Assert.Contains("An: Ich &lt;i@y.de&gt;", html);
+        Assert.Contains("<details open><summary>Bob", html);
+    }
+}

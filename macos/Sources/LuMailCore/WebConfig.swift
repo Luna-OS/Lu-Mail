@@ -8,14 +8,20 @@ public struct WebConfig: Codable, Hashable, Sendable {
     /// Ordner-Schlüssel (Kategorie oder Rolle) → Webadresse.
     public var folders: [String: String]
     public var unreadTitlePattern: String?
+    /// Seite zum Verfassen einer neuen Mail (falls bekannt).
+    public var composeUrl: String?
+    /// Leser in `shared/webmail/lu-webmail.js` für die Lu-Ansicht (§21); nil = nur Webseiten-Ansicht.
+    public var reader: String?
 
     public init(loginUrl: String, homeUrl: String, loggedInPrefixes: [String], folders: [String: String],
-                unreadTitlePattern: String? = nil) {
+                unreadTitlePattern: String? = nil, composeUrl: String? = nil, reader: String? = nil) {
         self.loginUrl = loginUrl
         self.homeUrl = homeUrl
         self.loggedInPrefixes = loggedInPrefixes
         self.folders = folders
         self.unreadTitlePattern = unreadTitlePattern
+        self.composeUrl = composeUrl
+        self.reader = reader
     }
 
     /// Ein Eintrag in der Seitenleiste eines Web-Kontos.
