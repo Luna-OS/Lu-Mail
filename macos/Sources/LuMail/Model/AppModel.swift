@@ -918,7 +918,7 @@ final class AppModel {
             return
         }
         let accountId = selection?.accountId.flatMap { account(id: $0) }.flatMap { $0.isWeb ? nil : $0.id } ?? firstMailAccount.id
-        let signature = accountId.flatMap { account(id: $0)?.signature }
+        let signature = account(id: accountId)?.signature
         composeDraft = ComposeDraft(accountId: accountId, to: recipient, body: MessageBuilder.bodyWithSignature("", signature: signature))
     }
 
