@@ -19,6 +19,7 @@ FILES = {
     "loginHTML": "shared/login/login.html",
     "doneHTML": "shared/login/done.html",
     "oauthExampleJSON": "shared/oauth.example.json",
+    "updateJSON": "shared/update.json",
 }
 
 

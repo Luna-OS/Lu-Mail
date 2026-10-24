@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "repository": "Luna-OS/Lu-Mail",
+  "latestReleaseApi": "https://api.github.com/repos/Luna-OS/Lu-Mail/releases/latest",
+  "checkIntervalHours": 6,
+  "initialDelaySeconds": 15,
+  "assetSuffixes": {
+    "macos": "-macOS.dmg",
+    "windows-x64": "-Windows-x64-Setup.exe",
+    "windows-arm64": "-Windows-arm64-Setup.exe"
+  },
+  "checksumsAsset": "SHA256SUMS.txt"
+}

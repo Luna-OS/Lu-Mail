@@ -1,16 +1,54 @@
 name: CI
 
+# Baut bei jedem PR/Push die Apps (.dmg und Setup.exe als Artefakte).
+# Release: Actions → CI → „Run workflow“ → Version eintragen (z. B. 0.2.0) – oder einen Tag v0.2.0 pushen.
+# Das Release enthält dann die Downloads, die auch der Auto-Updater in der App verwendet.
+
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version für ein neues Release (z. B. 0.2.0). Leer lassen = nur bauen."
+        required: false
+        default: ""
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  version:
+    name: Version bestimmen
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          release=false
+          version=0.1.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            release=true
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            version="${INPUT_VERSION#v}"
+            release=true
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Ungültige Version '$version' – erwartet z. B. 1.2.3"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "Version $version (Release: $release)"
+
   shared:
     name: Gemeinsame Dateien
     runs-on: ubuntu-latest
@@ -34,8 +72,11 @@ jobs:
       - run: swift test --package-path macos
 
   macos:
-    name: macOS-App
+    name: macOS-App (.dmg)
     runs-on: macos-15
+    needs: version
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
@@ -43,28 +84,71 @@ jobs:
         run: swift test --package-path macos
       - name: Lu-Mail.app bauen
         run: macos/scripts/build-app.sh
-      - name: App packen
-        run: ditto -c -k --keepParent macos/build/Lu-Mail.app Lu-Mail-macOS.zip
+      - name: Disk-Image erstellen
+        run: macos/scripts/build-dmg.sh "build/Lu-Mail-$VERSION-macOS.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: Lu-Mail-macOS
-          path: Lu-Mail-macOS.zip
+          path: macos/build/Lu-Mail-*-macOS.dmg
+          if-no-files-found: error
 
   windows:
-    name: Windows-App
+    name: Windows-App (${{ matrix.arch }}, Setup.exe)
     runs-on: windows-latest
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
       - name: Tests
+        if: matrix.arch == 'x64'
         run: dotnet test windows/tests/LuMail.Core.Tests -c Release
-      - name: App bauen (x64)
-        run: dotnet build windows/src/LuMail.App/LuMail.App.csproj -c Release -p:Platform=x64
-      - name: App veröffentlichen (x64)
-        run: dotnet publish windows/src/LuMail.App/LuMail.App.csproj -c Release -p:Platform=x64 -r win-x64 -o publish/LuMail-win-x64
+      - name: Inno Setup bereitstellen
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: App und Installer bauen
+        shell: pwsh
+        run: windows/installer/build-installer.ps1 -Arch ${{ matrix.arch }} -Version $env:VERSION
       - uses: actions/upload-artifact@v4
         with:
-          name: Lu-Mail-Windows-x64
-          path: publish/LuMail-win-x64
+          name: Lu-Mail-Windows-${{ matrix.arch }}
+          path: dist/Lu-Mail-*-Setup.exe
+          if-no-files-found: error
+
+  release:
+    name: GitHub-Release veröffentlichen
+    needs: [version, shared, core-linux, macos, windows]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Prüfsummen erzeugen
+        working-directory: dist
+        run: |
+          sha256sum Lu-Mail-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Release anlegen
+        run: |
+          gh release create "v$VERSION" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Lu-Mail $VERSION" \
+            --generate-notes

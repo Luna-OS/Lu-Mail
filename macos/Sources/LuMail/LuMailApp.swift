@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct LuMailApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
     init() {
@@ -24,6 +25,9 @@ struct LuMailApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Konto hinzufügen …") { model.showAddAccount = true }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .appInfo) {
+                Button("Nach Updates suchen …") { Task { await UpdateManager.shared.check(userInitiated: true) } }
             }
             CommandMenu("Postfach") {
                 Button("Alle Postfächer aktualisieren") { Task { await model.refreshAll() } }

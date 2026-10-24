@@ -54,6 +54,9 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.banner)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            UpdateBar()
+        }
         .overlay {
             if model.accounts.isEmpty {
                 WelcomeView()

@@ -59,6 +59,9 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .tabItem { Label("Konten", systemImage: "person.crop.circle") }
+
+            UpdateSettingsView()
+                .tabItem { Label("Updates", systemImage: "arrow.down.circle") }
         }
         .frame(width: 560, height: 420)
         .onChange(of: model.separateCategories) { _, _ in model.saveSettings() }

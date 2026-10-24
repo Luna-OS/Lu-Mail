@@ -36,6 +36,7 @@ public sealed class MainWindow : Window
         }
 
         AppWindow.Resize(new SizeInt32 { Width = 1360, Height = 860 });
+        AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "LuMail.ico"));
     }
 
     public void ShowError(string message) => _page.ShowMessage(message, isError: true);
