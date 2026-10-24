@@ -18,6 +18,10 @@
     <EmbeddedResource Include="..\..\..\shared\**\*.json;..\..\..\shared\login\*.html"
                       LinkBase="Shared"
                       LogicalName="LuMail.Shared.%(Filename)%(Extension)" />
+    <!-- Web-Leser für die Lu-Ansicht (FUNKTIONEN §21): LuMail.Shared.lu-webmail.js -->
+    <EmbeddedResource Include="..\..\..\shared\webmail\*.js"
+                      LinkBase="Shared"
+                      LogicalName="LuMail.Shared.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Eingebaute OAuth-Client-IDs (FUNKTIONEN §18): im Repository "{}", die CI füllt die Datei aus Secrets. -->

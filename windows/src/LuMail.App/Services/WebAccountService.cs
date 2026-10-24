@@ -20,6 +20,8 @@ public sealed class WebAccountService
         public required WebView2 View { get; init; }
         public Task? Ready { get; set; }
         public int? Unread { get; set; }
+        /// <summary>Lu-Ansicht: Aufrufe pro Konto nacheinander (§21).</summary>
+        public SemaphoreSlim Queue { get; } = new(1, 1);
     }
 
     private readonly AppServices _s;
@@ -163,18 +165,129 @@ public sealed class WebAccountService
         if (previous is not null && count > previous) NewMail?.Invoke(this, (entry.Account, count - previous.Value));
     }
 
-    /// <summary>Ansicht des Kontos zeigen und zum Ordner navigieren; alle anderen ausblenden.</summary>
-    public async Task ShowAsync(Account account, string folderKey)
+    /// <summary>
+    /// Ansicht des Kontos zeigen (alle anderen ausblenden). Mit <paramref name="navigate"/> zum Ordner navigieren;
+    /// ohne bleibt die aktuelle Seite (z. B. die in der Lu-Ansicht geöffnete Nachricht).
+    /// </summary>
+    public async Task ShowAsync(Account account, string folderKey, bool navigate = true)
+    {
+        var entry = await ActivateAsync(account);
+        if (entry is null) return;
+        var url = WebMail.FolderUrl(entry.Provider.Web!, folderKey) ?? entry.Provider.Web!.HomeUrl;
+        if (navigate && !string.Equals(entry.View.CoreWebView2?.Source, url, StringComparison.Ordinal)) entry.View.CoreWebView2?.Navigate(url);
+        NavigationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Ansicht sichtbar machen (auch hinter der Lu-Ansicht – so rendert die Webseite weiter).</summary>
+    public async Task ActivateBehindAsync(Account account) => await ActivateAsync(account);
+
+    private async Task<Entry?> ActivateAsync(Account account)
     {
         ActiveAccount = account;
         foreach (var e in _entries.Values) e.View.Visibility = e.Account.Id == account.Id ? Visibility.Visible : Visibility.Collapsed;
         await EnsureAsync(account);
-        if (!_entries.TryGetValue(account.Id, out var entry)) return;
+        if (!_entries.TryGetValue(account.Id, out var entry)) return null;
         entry.View.Visibility = Visibility.Visible;
         if (entry.Ready is not null) await entry.Ready;
-        var url = WebMail.FolderUrl(entry.Provider.Web!, folderKey) ?? entry.Provider.Web!.HomeUrl;
-        if (!string.Equals(entry.View.CoreWebView2?.Source, url, StringComparison.Ordinal)) entry.View.CoreWebView2?.Navigate(url);
+        return entry.View.CoreWebView2 is null ? null : entry;
+    }
+
+    /// <summary>„Neue E-Mail“ im Webmail: zur <c>composeUrl</c> (falls vorhanden).</summary>
+    public async Task ComposeAsync(Account account)
+    {
+        var entry = await ActivateAsync(account);
+        if (entry?.Provider.Web?.ComposeUrl is { Length: > 0 } url) entry.View.CoreWebView2.Navigate(url);
         NavigationChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ------------------------------------------------------- Lu-Ansicht (§21)
+
+    /// <summary>Hat der Anbieter einen Web-Leser?</summary>
+    public bool HasReader(Account account) => _s.Providers.Find(account.ProviderId)?.Web?.Reader is { Length: > 0 };
+
+    private async Task<string?> ExecuteAsync(Entry entry, string script)
+    {
+        try
+        {
+            return await entry.View.CoreWebView2.ExecuteScriptAsync(script);
+        }
+        catch (Exception)
+        {
+            return null; // Seite lädt gerade neu o. Ä. – die Abfrage wiederholt sich
+        }
+    }
+
+    /// <summary>
+    /// Ordner im Hintergrund-Browser öffnen und die Liste lesen: steht er schon in einer Nachricht des Ordners,
+    /// genügt history.back(), sonst Navigation; danach Abfrage nach §21.
+    /// </summary>
+    public async Task<(WebReaderOutcome Outcome, IReadOnlyList<WebReaderItem> Items)> LoadListAsync(Account account, string folderKey, CancellationToken ct = default)
+    {
+        await EnsureAsync(account);
+        if (!_entries.TryGetValue(account.Id, out var entry) || entry.Provider.Web?.Reader is not { Length: > 0 } reader)
+            return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
+        if (entry.Ready is not null) await entry.Ready;
+        if (entry.View.CoreWebView2 is null) return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
+
+        await entry.Queue.WaitAsync(ct);
+        try
+        {
+            var core = entry.View.CoreWebView2;
+            var folderUrl = WebMail.FolderUrl(entry.Provider.Web, folderKey) ?? entry.Provider.Web.HomeUrl;
+            switch (WebReader.NavigationFor(core.Source, folderUrl))
+            {
+                case WebFolderNavigation.HistoryBack:
+                    await ExecuteAsync(entry, "history.back()");
+                    await Task.Delay(800, ct);
+                    break;
+                case WebFolderNavigation.Navigate:
+                    await NavigateAndWaitAsync(core, folderUrl, ct);
+                    break;
+            }
+            return await WebReader.PollListAsync(script => ExecuteAsync(entry, script), reader, ct: ct);
+        }
+        finally
+        {
+            entry.Queue.Release();
+        }
+    }
+
+    /// <summary>Navigieren und auf den Seitenwechsel warten (auch Hash-Navigation), höchstens 5 s, dann kurz rendern lassen.</summary>
+    private static async Task NavigateAndWaitAsync(CoreWebView2 core, string url, CancellationToken ct)
+    {
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnSource(CoreWebView2 s, CoreWebView2SourceChangedEventArgs a) => changed.TrySetResult();
+        void OnCompleted(CoreWebView2 s, CoreWebView2NavigationCompletedEventArgs a) => changed.TrySetResult();
+        core.SourceChanged += OnSource;
+        core.NavigationCompleted += OnCompleted;
+        try
+        {
+            core.Navigate(url);
+            await Task.WhenAny(changed.Task, Task.Delay(5000, ct));
+            await Task.Delay(800, ct);
+        }
+        finally
+        {
+            core.SourceChanged -= OnSource;
+            core.NavigationCompleted -= OnCompleted;
+        }
+    }
+
+    /// <summary>Nachricht im Webmail öffnen und lesen (§21); null, wenn das nicht gelingt.</summary>
+    public async Task<WebMessageResult?> LoadMessageAsync(Account account, WebReaderItem item, CancellationToken ct = default)
+    {
+        if (!_entries.TryGetValue(account.Id, out var entry) || entry.Provider.Web?.Reader is not { Length: > 0 } reader) return null;
+        if (entry.Ready is not null) await entry.Ready;
+        if (entry.View.CoreWebView2 is null) return null;
+        await entry.Queue.WaitAsync(ct);
+        try
+        {
+            return await WebReader.OpenAndPollMessageAsync(script => ExecuteAsync(entry, script), reader, item.Id, ct: ct);
+        }
+        finally
+        {
+            entry.Queue.Release();
+        }
     }
 
     public void HideAll()
