@@ -1,6 +1,7 @@
 import AppKit
 import LuMailCore
 import Observation
+import SwiftUI
 import WebKit
 
 /// Eingebettete Webmail-Postfächer für Web-Konten (docs/FUNKTIONEN.md §20).
@@ -54,7 +55,7 @@ final class WebMailService {
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: accountId)
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         // Auch im Hintergrund weiterlaufen, damit der Ungelesen-Zähler aktuell bleibt.
-        configuration.preferences.inactiveSchedulingPolicy = WKInactiveSchedulingPolicy.none
+        configuration.preferences.inactiveSchedulingPolicy = WKPreferences.InactiveSchedulingPolicy.none
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.customUserAgent = ProviderCatalog.shared.webUserAgent["macos"]
         webView.allowsBackForwardNavigationGestures = true

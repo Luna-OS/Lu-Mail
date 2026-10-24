@@ -180,13 +180,13 @@ struct AddAccountView: View {
         .font(.callout)
     }
 
-    @ViewBuilder
     private struct GuideStep {
         var text: String
         var url: String?
         var button: String?
     }
 
+    @ViewBuilder
     private func stepList(_ steps: [GuideStep]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(steps.enumerated()), id: \.offset) { index, item in
