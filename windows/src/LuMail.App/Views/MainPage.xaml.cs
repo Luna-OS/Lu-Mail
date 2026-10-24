@@ -25,6 +25,13 @@ public sealed partial class MainPage : Page
     private MessageItem? _current;
     private MessageDetail? _currentDetail;
     private IReadOnlyList<MessageDetail> _threadDetails = Array.Empty<MessageDetail>();
+    /// <summary>Lu-Ansicht: geöffnete Webmail-Nachricht (§21).</summary>
+    private LuMail.Core.Catalog.WebMessageResult? _webMessage;
+    /// <summary>Konten, deren Lu-Ansicht in dieser Sitzung gescheitert ist (→ Webseite).</summary>
+    private readonly HashSet<string> _webFallback = new();
+    private DispatcherQueueTimer? _webListTimer;
+    private int _webListVersion;
+    private bool _webLuActive;
     private bool _externalAllowed;
     private bool _webViewReady;
     private bool _navigatingInternally;
@@ -329,8 +336,15 @@ public sealed partial class MainPage : Page
         var version = ++_openVersion;
         _current = item;
         _currentDetail = null;
+        _webMessage = null;
         _threadDetails = Array.Empty<MessageDetail>();
         _externalAllowed = _s.Settings.AlwaysLoadExternalImages;
+        WebReaderBar.Visibility = item.WebItem is null ? Visibility.Collapsed : Visibility.Visible;
+        if (item.WebItem is not null)
+        {
+            await OpenWebMessageAsync(item, version);
+            return;
+        }
         ShowReaderHeader(item, null);
         AttachmentsPanel.Children.Clear();
         AttachmentsScroller.Visibility = Visibility.Collapsed;
@@ -457,16 +471,20 @@ public sealed partial class MainPage : Page
     /// <summary>Zeigt die aktuelle Nachricht bzw. Konversation (mit CSP) in der Web-Ansicht.</summary>
     private void RenderCurrent()
     {
-        if (_currentDetail is null || !_webViewReady) return;
+        if ((_currentDetail is null && _webMessage is null) || !_webViewReady) return;
         var dark = ActualTheme == ElementTheme.Dark;
         var tokens = _s.Theme.Palette(_s.Settings.ThemeVariant, dark, _s.Settings.Accent);
         var style = new PlainTextStyle(tokens["surface"], tokens["textPrimary"], tokens["accent"]);
-        var html = _threadDetails.Count > 1
-            ? HtmlPreparer.PrepareConversation(_threadDetails, _externalAllowed, style)
-            : HtmlPreparer.Prepare(_currentDetail, _externalAllowed, style);
+        var html = _webMessage is not null
+            ? LuMail.Core.Catalog.WebReader.PrepareHtml(_webMessage, _externalAllowed, style)
+            : _threadDetails.Count > 1
+                ? HtmlPreparer.PrepareConversation(_threadDetails, _externalAllowed, style)
+                : HtmlPreparer.Prepare(_currentDetail!, _externalAllowed, style);
 
         // §14 Tracking-Bericht + Hinweis auf blockierte Inhalte
-        var allHtml = string.Join("\n", _threadDetails.Select(d => d.HtmlBody ?? ""));
+        var allHtml = _webMessage is not null
+            ? string.Join("\n", _webMessage.Parts.Select(p => p.Html))
+            : string.Join("\n", _threadDetails.Select(d => d.HtmlBody ?? ""));
         var trackers = _s.Trackers.Detect(allHtml);
         var hasExternal = HtmlPreparer.HasExternalContent(allHtml);
         if (!_externalAllowed && (hasExternal || trackers.Count > 0))
@@ -507,6 +525,7 @@ public sealed partial class MainPage : Page
         _openVersion++;
         _current = null;
         _currentDetail = null;
+        _webMessage = null;
         _threadDetails = Array.Empty<MessageDetail>();
         _selectedKey = null;
         ReaderPanel.Visibility = Visibility.Collapsed;
@@ -536,9 +555,11 @@ public sealed partial class MainPage : Page
     /// <summary>Ziel einer Aktion: Mehrfachauswahl oder die geöffnete Nachricht.</summary>
     private List<MessageItem> ActionTargets()
     {
-        var selected = SelectedItems();
+        var selected = SelectedItems().Where(i => i.WebItem is null).ToList();
         if (selected.Count > 1) return selected;
-        return _current is null || _current.Outbox is not null ? new List<MessageItem>() : new List<MessageItem> { _current };
+        return _current is null || _current.Outbox is not null || _current.WebItem is not null
+            ? new List<MessageItem>()
+            : new List<MessageItem> { _current };
     }
 
     private async Task RunActionAsync(Func<List<MessageItem>, Task> action, bool removesMessages)
@@ -744,14 +765,17 @@ public sealed partial class MainPage : Page
 
     private void OpenCompose(OutgoingMessage? draft = null, Account? from = null)
     {
+        // §20/§21: Web-Konto gewählt (oder nur Web-Konten) → im Webmail verfassen
+        if (draft is null && Vm.Selected is { Target: SidebarTarget.Web, Account: { } selectedWeb })
+        {
+            _ = ComposeInWebAsync(selectedWeb);
+            return;
+        }
         if (Vm.ImapAccounts.Count == 0)
         {
             if (Vm.WebAccounts.FirstOrDefault() is { } web && Vm.FindSidebar($"web:{web.Id}:primary") is { } inbox)
             {
-                // §20: ohne IMAP-Konto im Webmail schreiben
-                _ = Vm.SelectAsync(inbox);
-                WebInfoBar.Message = "Schreibe direkt im Postfach (Verfassen).";
-                WebInfoBar.IsOpen = true;
+                _ = ComposeInWebAsync(web, inbox);
                 return;
             }
             _ = ShowAddAccountAsync(); // §19: „Neue E-Mail“ ohne Konto öffnet „Konto hinzufügen“
@@ -775,7 +799,7 @@ public sealed partial class MainPage : Page
 
     private void Reply(bool replyAll)
     {
-        if (_current is null || _currentDetail is null || _current.Outbox is not null) return;
+        if (_current is null || _currentDetail is null || _current.Outbox is not null || _current.WebItem is not null) return;
         OpenCompose(MessageComposer.CreateReply(_currentDetail, _current.Account, replyAll), _current.Account);
     }
 
@@ -783,7 +807,7 @@ public sealed partial class MainPage : Page
 
     private void Forward()
     {
-        if (_current is null || _currentDetail is null || _current.Outbox is not null) return;
+        if (_current is null || _currentDetail is null || _current.Outbox is not null || _current.WebItem is not null) return;
         OpenCompose(MessageComposer.CreateForward(_currentDetail, _current.Account), _current.Account);
     }
 
@@ -829,11 +853,16 @@ public sealed partial class MainPage : Page
 
     // ===================================================== Aktualisieren
 
-    private async void OnRefreshClick(object sender, RoutedEventArgs e) => await Vm.RefreshAllAsync();
+    private async void OnRefreshClick(object sender, RoutedEventArgs e)
+    {
+        if (_webLuActive) await ReloadWebListAsync();
+        await Vm.RefreshAllAsync();
+    }
 
     private async void OnRefreshAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
+        if (_webLuActive) await ReloadWebListAsync();
         await Vm.RefreshAllAsync();
     }
 
@@ -922,30 +951,241 @@ public sealed partial class MainPage : Page
 
     private void UpdateTray() => Tray?.Update(Vm.PrimaryUnreadCount + App.Web.TotalUnread, Vm.NewestUnread());
 
-    /// <summary>Web-Eintrag gewählt → Webmail statt Liste und Leseansicht (§20).</summary>
+    /// <summary>
+    /// Web-Eintrag gewählt: Lu-Ansicht (§21, eigene Liste + Lesebereich, Webseite lädt unsichtbar dahinter) oder
+    /// die Webseite selbst (§20). Andere Einträge: normale Liste.
+    /// </summary>
     private async Task ApplyWebSelectionAsync()
     {
         if (Vm.Selected is { Target: SidebarTarget.Web, Account: { } account } item)
         {
-            ListPane.Visibility = Visibility.Collapsed;
-            ReaderPane.Visibility = Visibility.Collapsed;
             WebAccountText.Text = account.Email;
-            try
-            {
-                await App.Web.ShowAsync(account, item.FolderPath ?? "primary");
-            }
-            catch (Exception ex)
-            {
-                ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
-            }
+            LuViewButton.Visibility = App.Web.HasReader(account) ? Visibility.Visible : Visibility.Collapsed;
+            if (UsesLuView(account)) await ShowLuViewAsync(item, account);
+            else await ShowWebsiteAsync(account, item.FolderPath ?? "primary", navigate: true);
         }
         else
         {
+            _webLuActive = false;
+            _webListTimer?.Stop();
             App.Web.HideAll();
             WebInfoBar.IsOpen = false;
+            WebPanel.IsHitTestVisible = true;
+            WebsiteButton.Visibility = Visibility.Collapsed;
+            ConversationToggle.Visibility = Visibility.Visible;
             ListPane.Visibility = Visibility.Visible;
             ReaderPane.Visibility = Visibility.Visible;
         }
+    }
+
+    /// <summary>Lu-Ansicht, wenn der Anbieter einen Leser hat, das Konto nicht auf „Webseite“ steht und sie nicht gescheitert ist.</summary>
+    private bool UsesLuView(Account account) =>
+        App.Web.HasReader(account) && !_webFallback.Contains(account.Id)
+        && !(_s.Settings.WebViewModes.TryGetValue(account.Id, out var mode) && mode == "web");
+
+    private async Task ShowLuViewAsync(SidebarItem item, Account account)
+    {
+        _webLuActive = true;
+        // Webseite bleibt in voller Größe sichtbar dahinter (rendert weiter), nimmt aber keine Eingaben an.
+        WebPanel.IsHitTestVisible = false;
+        ListPane.Visibility = Visibility.Visible;
+        ReaderPane.Visibility = Visibility.Visible;
+        WebsiteButton.Visibility = Visibility.Visible;
+        ConversationToggle.Visibility = Visibility.Collapsed;
+        ClearReader();
+        StartWebListTimer();
+        try
+        {
+            await App.Web.ActivateBehindAsync(account);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
+            return;
+        }
+        await LoadWebListAsync(item, account, keepSelection: false);
+    }
+
+    private async Task ShowWebsiteAsync(Account account, string folderKey, bool navigate)
+    {
+        _webLuActive = false;
+        _webListTimer?.Stop();
+        WebPanel.IsHitTestVisible = true;
+        ListPane.Visibility = Visibility.Collapsed;
+        ReaderPane.Visibility = Visibility.Collapsed;
+        WebsiteButton.Visibility = Visibility.Collapsed;
+        LuViewButton.Visibility = App.Web.HasReader(account) ? Visibility.Visible : Visibility.Collapsed;
+        try
+        {
+            await App.Web.ShowAsync(account, folderKey, navigate);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
+        }
+    }
+
+    /// <summary>Liste über den Web-Leser holen (§21) – bei Fehler Webseite, bei Abmeldung Webseite zum Anmelden.</summary>
+    private async Task LoadWebListAsync(SidebarItem item, Account account, bool keepSelection)
+    {
+        var version = ++_webListVersion;
+        var key = item.FolderPath ?? "primary";
+        if (!keepSelection) _selectedKey = null;
+        BusyBar.Visibility = Visibility.Visible;
+        try
+        {
+            var (outcome, items) = await App.Web.LoadListAsync(account, key);
+            if (version != _webListVersion || !_webLuActive || Vm.Selected?.Key != item.Key) return;
+            var provider = _s.Providers.Find(account.ProviderId);
+            switch (outcome)
+            {
+                case LuMail.Core.Catalog.WebReaderOutcome.Ok when provider is not null:
+                    Vm.SetWebList(account, provider, key, items);
+                    UpdateListHeader();
+                    break;
+                case LuMail.Core.Catalog.WebReaderOutcome.NeedsLogin:
+                    WebInfoBar.Message = $"Bitte melde dich bei {provider?.Name ?? "deinem Anbieter"} neu an.";
+                    WebInfoBar.IsOpen = true;
+                    await ShowWebsiteAsync(account, key, navigate: false);
+                    break;
+                default:
+                    _webFallback.Add(account.Id);
+                    WebInfoBar.Message = $"Die Lu-Ansicht kann {provider?.Name ?? "diesen Anbieter"} gerade nicht lesen – Webseite wird angezeigt.";
+                    WebInfoBar.IsOpen = true;
+                    await ShowWebsiteAsync(account, key, navigate: true);
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (version == _webListVersion) BusyBar.Visibility = Vm.IsBusy ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private async Task ReloadWebListAsync()
+    {
+        if (_webLuActive && Vm.Selected is { Target: SidebarTarget.Web, Account: { } account } item)
+            await LoadWebListAsync(item, account, keepSelection: true);
+    }
+
+    /// <summary>Jede Minute neu laden, solange die Lu-Ansicht offen ist (nicht während eine Nachricht lädt).</summary>
+    private void StartWebListTimer()
+    {
+        _webListTimer ??= DispatcherQueue.CreateTimer();
+        _webListTimer.Stop();
+        _webListTimer.Interval = TimeSpan.FromSeconds(60);
+        _webListTimer.IsRepeating = true;
+        _webListTimer.Tick -= OnWebListTimerTick;
+        _webListTimer.Tick += OnWebListTimerTick;
+        _webListTimer.Start();
+    }
+
+    private async void OnWebListTimerTick(DispatcherQueueTimer sender, object args)
+    {
+        if (!ReaderLoading.IsActive) await ReloadWebListAsync();
+    }
+
+    /// <summary>Nachricht über den Web-Leser öffnen und anzeigen.</summary>
+    private async Task OpenWebMessageAsync(MessageItem item, int version)
+    {
+        PhishingBar.IsOpen = false;
+        UnsubscribeButton.Visibility = Visibility.Collapsed;
+        ScheduledBar.Visibility = Visibility.Collapsed;
+        ReminderBar.Visibility = Visibility.Collapsed;
+        ReaderCommands.Visibility = Visibility.Collapsed;
+        AttachmentsScroller.Visibility = Visibility.Collapsed;
+        ExternalBanner.Visibility = Visibility.Collapsed;
+        ShowReaderHeader(item, null);
+        ReaderLoading.IsActive = true;
+        try
+        {
+            var result = await App.Web.LoadMessageAsync(item.Account, item.WebItem!);
+            if (version != _openVersion) return;
+            if (result is null)
+            {
+                ShowMessage("Die Nachricht konnte in der Lu-Ansicht nicht gelesen werden – öffne sie in der Webseite.", isError: false,
+                    actionText: "In der Webseite öffnen", action: OpenCurrentInWebsite, severity: InfoBarSeverity.Warning);
+                return;
+            }
+            _webMessage = result;
+            item.Seen = true; // der Anbieter markiert sie beim Öffnen selbst als gelesen
+            if (result.Subject.Length > 0) ReaderSubject.Text = result.Subject;
+            var last = result.Parts.LastOrDefault();
+            if (last is not null)
+            {
+                ReaderFrom.Text = last.FromEmail.Length > 0 && last.From.Length > 0 ? $"{last.From} <{last.FromEmail}>" : last.Sender;
+                ReaderTo.Text = last.To.Length > 0 ? "An: " + last.To : "";
+                if (last.Date.Length > 0) ReaderDate.Text = last.Date;
+            }
+            RenderCurrent();
+        }
+        finally
+        {
+            if (version == _openVersion) ReaderLoading.IsActive = false;
+            UpdateListHeader();
+        }
+    }
+
+    private void OnOpenInWebsiteClick(object sender, RoutedEventArgs e) => OpenCurrentInWebsite();
+
+    /// <summary>Webseiten-Ansicht – dort ist genau diese Nachricht schon offen.</summary>
+    private void OpenCurrentInWebsite()
+    {
+        if (Vm.Selected is { Target: SidebarTarget.Web, Account: { } account } item)
+            _ = ShowWebsiteAsync(account, item.FolderPath ?? "primary", navigate: false);
+    }
+
+    private async void OnWebsiteModeClick(object sender, RoutedEventArgs e)
+    {
+        if (Vm.Selected is not { Target: SidebarTarget.Web, Account: { } account } item) return;
+        _s.Settings.WebViewModes[account.Id] = "web";
+        _s.SaveSettings();
+        await ShowWebsiteAsync(account, item.FolderPath ?? "primary", navigate: true);
+    }
+
+    private async void OnLuModeClick(object sender, RoutedEventArgs e)
+    {
+        if (Vm.Selected is not { Target: SidebarTarget.Web, Account: { } account } item) return;
+        _s.Settings.WebViewModes[account.Id] = "lu";
+        _s.SaveSettings();
+        _webFallback.Remove(account.Id);
+        WebInfoBar.IsOpen = false;
+        await ShowLuViewAsync(item, account);
+    }
+
+    /// <summary>„Neue E-Mail“ für ein Web-Konto: Webseite zeigen und zur composeUrl gehen.</summary>
+    private async Task ComposeInWebAsync(Account account, SidebarItem? select = null)
+    {
+        if (select is not null && Vm.Selected?.Key != select.Key)
+        {
+            _s.Settings.WebViewModes.TryGetValue(account.Id, out var previous);
+            _webFallback.Add(account.Id); // für diese Sitzung Webseite, damit die Auswahl nicht in die Lu-Ansicht springt
+            await Vm.SelectAsync(select);
+            _webFallback.Remove(account.Id);
+            _ = previous;
+        }
+        _webLuActive = false;
+        _webListTimer?.Stop();
+        WebPanel.IsHitTestVisible = true;
+        ListPane.Visibility = Visibility.Collapsed;
+        ReaderPane.Visibility = Visibility.Collapsed;
+        WebsiteButton.Visibility = Visibility.Collapsed;
+        LuViewButton.Visibility = App.Web.HasReader(account) ? Visibility.Visible : Visibility.Collapsed;
+        WebAccountText.Text = account.Email;
+        try
+        {
+            await App.Web.ComposeAsync(account);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
+            return;
+        }
+        WebInfoBar.Message = "Schreibe direkt im Postfach (Verfassen).";
+        WebInfoBar.IsOpen = true;
     }
 
     private void OnWebBackClick(object sender, RoutedEventArgs e) => App.Web.GoBack();
