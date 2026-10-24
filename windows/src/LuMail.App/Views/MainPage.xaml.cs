@@ -626,7 +626,7 @@ public sealed partial class MainPage : Page
         Vm.Snooze(targets, until);
         ClearReader();
         UpdateListHeader();
-        ShowMessage($"Erinnerung am {SnoozePresets.Format(until)}.", isError: false);
+        ShowMessage($"Erinnerung am {SnoozePresets.Format(until)}.", isError: false, severity: InfoBarSeverity.Informational);
     }
 
     private async void OnUnsnoozeClick(object sender, RoutedEventArgs e)

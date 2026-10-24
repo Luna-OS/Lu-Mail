@@ -20,7 +20,7 @@ public sealed class SettingsWindow : Window
         Page.Initialize(accounts, vm);
         Content = Page;
         if (MicaController.IsSupported()) SystemBackdrop = new MicaBackdrop();
-        AppWindow.Resize(new SizeInt32 { Width = 920, Height = 660 });
+        WindowSizing.ResizeAndCenter(this, 920, 660);
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "LuMail.ico")); }
         catch (Exception) { }
         ThemeService.ApplyMode(this, App.Services.Settings);

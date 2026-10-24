@@ -38,7 +38,7 @@ public sealed class MainWindow : Window
             _page.UseTransparentBackground();
         }
 
-        AppWindow.Resize(new SizeInt32 { Width = 1360, Height = 860 });
+        WindowSizing.ResizeAndCenter(this, 1360, 860);
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "LuMail.ico"));
 
         ThemeService.ApplyMode(this, App.Services.Settings);
