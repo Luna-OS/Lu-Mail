@@ -1,18 +1,26 @@
-using LuMail.App.ViewModels;
+using LuMail.App.Services;
+using LuMail.Core.Catalog;
 using LuMail.Core.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 
 namespace LuMail.App.Views;
 
 /// <summary>
-/// „Konto hinzufügen“: Anbieter wählen, optional E-Mail-Adresse eingeben, „Im Browser anmelden“.
-/// OAuth, wenn oauth.json eine Client-ID enthält, sonst Passwort-Seite im Browser.
+/// Assistent „Konto hinzufügen“ (FUNKTIONEN §17): Schritt 1 E-Mail-Adresse oder Anbieter, Schritt 2 „So geht's“
+/// und Anmeldung im Browser. Der Haupt-Button sitzt in der Fußzeile des Dialogs und ist immer sichtbar.
 /// </summary>
 public sealed partial class AddAccountDialog : ContentDialog
 {
-    private readonly List<ProviderTile> _tiles;
+    private enum Step { Email, Provider, Waiting, Success }
+
+    private readonly AppServices _s = App.Services;
+    private Step _step = Step.Email;
+    private Provider? _provider;
+    private CustomServerSettings? _servers;
     private CancellationTokenSource? _cts;
+    private bool _discovering;
 
     /// <summary>Das neu hinzugefügte Konto (null = abgebrochen).</summary>
     public Account? AddedAccount { get; private set; }
@@ -20,91 +28,250 @@ public sealed partial class AddAccountDialog : ContentDialog
     public AddAccountDialog()
     {
         InitializeComponent();
-        var services = App.Services;
-        _tiles = services.Providers.Providers.Select(p => new ProviderTile(p, services.Setup.CanUseOAuth(p))).ToList();
-        ProviderGrid.ItemsSource = _tiles;
-        Closing += OnClosing;
+        BuildProviderGrid();
+        Closing += (_, _) => _cts?.Cancel();
+        Opened += (_, _) => EmailBox.Focus(FocusState.Programmatic);
+        ShowStep(Step.Email);
     }
 
-    private ProviderTile? SelectedTile => ProviderGrid.SelectedItem as ProviderTile;
+    // ------------------------------------------------------------ Schritt 1
 
-    private void OnProviderSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateHint();
-
-    /// <summary>Anbieter anhand der eingegebenen Adresse vorauswählen.</summary>
-    private void OnEmailChanged(object sender, TextChangedEventArgs e)
+    /// <summary>Kompakte Anbieter-Kacheln (3 Spalten, alle ohne Scrollen sichtbar).</summary>
+    private void BuildProviderGrid()
     {
-        var provider = App.Services.Providers.FindByEmailDomain(EmailBox.Text);
-        if (provider is not null && SelectedTile?.Provider.Id != provider.Id)
-            ProviderGrid.SelectedItem = _tiles.FirstOrDefault(t => t.Provider.Id == provider.Id);
+        const int columns = 3;
+        var providers = _s.Providers.Providers;
+        for (var c = 0; c < columns; c++) ProviderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (var r = 0; r < (providers.Count + columns - 1) / columns; r++) ProviderGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
+
+        for (var i = 0; i < providers.Count; i++)
+        {
+            var provider = providers[i];
+            var tile = new Grid { Background = BrushCache.ForProvider(provider), CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 0, 8, 0) };
+            tile.Children.Add(new TextBlock
+            {
+                Text = provider.Name,
+                Foreground = BrushCache.FromHex(IsLight(provider.Color) ? "#1B1A33" : "#FFFFFF"),
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            var button = new Button
+            {
+                Content = tile,
+                Padding = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Stretch,
+                BorderThickness = new Thickness(0),
+                Tag = provider,
+            };
+            ToolTipService.SetToolTip(button, provider.Name);
+            button.Click += (s, _) =>
+            {
+                if ((s as Button)?.Tag is Provider p) ShowProvider(p, null);
+            };
+            Grid.SetRow(button, i / columns);
+            Grid.SetColumn(button, i % columns);
+            ProviderGrid.Children.Add(button);
+        }
     }
 
-    private void UpdateHint()
+    /// <summary>Helle Markenfarben (z. B. WEB.DE-Gelb) bekommen dunkle Schrift.</summary>
+    private static bool IsLight(string hex)
     {
-        var tile = SelectedTile;
-        LoginButton.IsEnabled = tile is not null;
-        ErrorBar.IsOpen = false;
-        if (tile is null)
-        {
-            HintBar.IsOpen = false;
-            return;
-        }
-
-        var provider = tile.Provider;
-        if (provider.SupportsOAuth && !tile.OAuthAvailable && !provider.SupportsPassword)
-        {
-            HintBar.Severity = InfoBarSeverity.Warning;
-            HintBar.Title = "Eigene OAuth-Client-ID nötig";
-            HintBar.Message =
-                $"{provider.Name} erlaubt E-Mail-Programmen nur die Anmeldung über OAuth. Trage deine eigene Client-ID für „{provider.Id}“ " +
-                $"in {App.Services.Paths.OAuthFile} ein (Vorlage: shared/oauth.example.json) und öffne diesen Dialog erneut.";
-            HintBar.IsOpen = true;
-            LoginButton.IsEnabled = false;
-            return;
-        }
-        HintBar.Severity = InfoBarSeverity.Informational;
-        if (provider.SupportsOAuth && !tile.OAuthAvailable)
-        {
-            HintBar.Title = "OAuth nicht eingerichtet";
-            HintBar.Message =
-                $"Für {provider.Name} ist keine eigene OAuth-Client-ID hinterlegt ({App.Services.Paths.OAuthFile}). " +
-                $"Du meldest dich deshalb im Browser mit deinem {provider.PasswordLabel} an. {provider.PasswordHelp}";
-        }
-        else if (tile.OAuthAvailable)
-        {
-            HintBar.Title = "Anmeldung über OAuth";
-            HintBar.Message = $"Du meldest dich direkt bei {provider.Name} an. Lu-Mail erhält nur ein Zugriffstoken, nie dein Passwort.";
-        }
-        else
-        {
-            HintBar.Title = provider.PasswordLabel;
-            HintBar.Message = provider.PasswordHelp;
-        }
-        HintBar.IsOpen = true;
+        var (_, r, g, b) = ThemeCatalog.ParseHex(hex);
+        return 0.299 * r + 0.587 * g + 0.114 * b > 170;
     }
 
-    private async void OnLoginClick(object sender, RoutedEventArgs e)
-    {
-        var tile = SelectedTile;
-        if (tile is null) return;
+    private string Email => EmailBox.Text.Trim();
+    private bool EmailLooksValid => Email.Length > 3 && Email.Contains('@') && EmailParts.GetDomain(Email).Contains('.');
 
+    private void OnEmailChanged(object sender, TextChangedEventArgs e) => UpdateButtons();
+
+    private async void OnEmailKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter) return;
+        e.Handled = true;
+        if (EmailLooksValid) await DiscoverAsync();
+    }
+
+    private async Task DiscoverAsync()
+    {
+        if (_discovering || !EmailLooksValid) return;
+        _discovering = true;
+        DiscoveringText.Text = $"Suche Einstellungen für {EmailParts.GetDomain(Email)} …";
+        DiscoveringPanel.Visibility = Visibility.Visible;
+        UpdateButtons();
         _cts = new CancellationTokenSource();
-        ShowWaiting(true, tile.OAuthAvailable
-            ? $"Melde dich im geöffneten Browserfenster bei {tile.Name} an und erlaube den Zugriff für Lu-Mail."
-            : $"Gib im geöffneten Browserfenster deine E-Mail-Adresse und dein {tile.Provider.PasswordLabel} ein.");
         try
         {
-            AddedAccount = await App.Services.Setup.AddAccountAsync(tile.Provider, EmailBox.Text, _cts.Token);
+            var result = await _s.Discovery.DiscoverAsync(Email, _cts.Token);
+            ShowProvider(result.Provider, result.Servers);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _discovering = false;
+            DiscoveringPanel.Visibility = Visibility.Collapsed;
+            UpdateButtons();
+        }
+    }
+
+    // ------------------------------------------------------------ Schritt 2
+
+    private bool OAuthAvailable => _provider is not null && _s.Setup.CanUseOAuth(_provider);
+    private bool OAuthOnlyWithoutClient => _provider is { SupportsPassword: false } && !OAuthAvailable;
+
+    private string LoginButtonText
+    {
+        get
+        {
+            if (_provider is null) return "Im Browser anmelden";
+            if (!OAuthAvailable && !OAuthOnlyWithoutClient) return "Im Browser anmelden";
+            return _provider.Id switch
+            {
+                "gmail" => "Mit Google anmelden",
+                "outlook" => "Mit Microsoft anmelden",
+                "mailru" => "Mit Mail.ru anmelden",
+                _ => $"Mit {_provider.Name} anmelden",
+            };
+        }
+    }
+
+    private void ShowProvider(Provider provider, CustomServerSettings? servers)
+    {
+        _provider = provider;
+        _servers = servers;
+        ProviderBadge.Background = BrushCache.ForProvider(provider);
+        ProviderInitial.Text = provider.Name.Length > 0 ? provider.Name[..1] : "?";
+        ProviderInitial.Foreground = BrushCache.FromHex(IsLight(provider.Color) ? "#1B1A33" : "#FFFFFF");
+        ProviderNameText.Text = provider.Name;
+        ProviderEmailText.Text = EmailLooksValid ? Email : "";
+        ProviderEmailText.Visibility = EmailLooksValid ? Visibility.Visible : Visibility.Collapsed;
+
+        BuildSteps(provider);
+
+        ServersText.Visibility = provider.CustomServers ? Visibility.Visible : Visibility.Collapsed;
+        ServersText.Text = servers is null
+            ? "Die Server trägst du auf der Anmeldeseite im Browser ein."
+            : $"Gefundene Server: {Describe(servers.Imap)} (IMAP) · {Describe(servers.Smtp)} (SMTP) – auf der Anmeldeseite änderbar.";
+
+        HintBar.IsOpen = false;
+        if (OAuthOnlyWithoutClient)
+        {
+            HintBar.Severity = InfoBarSeverity.Warning;
+            HintBar.Title = "Anmeldung derzeit nicht möglich";
+            HintBar.Message = $"{provider.Name} erlaubt nur die Anmeldung über OAuth, und diese Lu-Mail-Version enthält keine Client-ID dafür. " +
+                              $"Du kannst eine eigene Client-ID für „{provider.Id}“ in {_s.Paths.OAuthFile} eintragen.";
+            HintBar.IsOpen = true;
+        }
+
+        BridgePanel.Visibility = provider.Setup.CheckLocalPort is null ? Visibility.Collapsed : Visibility.Visible;
+        if (provider.Setup.CheckLocalPort is { } port) _ = CheckBridgeAsync(port);
+
+        ShowStep(Step.Provider);
+    }
+
+    private static string Describe(ServerEndpoint e) =>
+        $"{e.Host}:{e.Port} ({(e.Security == "starttls" ? "STARTTLS" : "SSL/TLS")})";
+
+    private void BuildSteps(Provider provider)
+    {
+        StepsPanel.Children.Clear();
+        var steps = OAuthAvailable && provider.Setup.OAuthSteps.Count > 0 ? provider.Setup.OAuthSteps : provider.Setup.PasswordSteps;
+        if (steps.Count == 0) steps = new List<SetupStep> { new() { Text = $"Auf „{LoginButtonText}“ klicken." } };
+
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var row = new Grid { ColumnSpacing = 10 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var number = new Border
+            {
+                Width = 22, Height = 22, CornerRadius = new CornerRadius(11), VerticalAlignment = VerticalAlignment.Top,
+                Background = BrushCache.ForProvider(provider),
+            };
+            number.Child = new TextBlock
+            {
+                Text = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = BrushCache.FromHex(IsLight(provider.Color) ? "#1B1A33" : "#FFFFFF"),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            };
+            row.Children.Add(number);
+
+            var content = new StackPanel { Spacing = 4 };
+            content.Children.Add(new TextBlock { Text = step.Text, TextWrapping = TextWrapping.Wrap });
+            if (!string.IsNullOrEmpty(step.Url) && Uri.TryCreate(step.Url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+            {
+                var link = new Button { Content = (step.Button ?? "Öffnen") + "  ↗", Padding = new Thickness(10, 3, 10, 4), Tag = uri };
+                link.Click += (s, _) =>
+                {
+                    if ((s as Button)?.Tag is Uri u) AppServices.OpenInBrowser(u);
+                };
+                content.Children.Add(link);
+            }
+            Grid.SetColumn(content, 1);
+            row.Children.Add(content);
+            StepsPanel.Children.Add(row);
+        }
+    }
+
+    private async Task CheckBridgeAsync(int port)
+    {
+        BridgeText.Text = "Prüfe Proton Mail Bridge …";
+        BridgeText.Foreground = BrushCache.FromHex(Palette("textSecondary"));
+        var running = await LocalPortCheck.IsOpenAsync(port);
+        BridgeText.Text = running ? "✓ Bridge läuft" : "✗ Bridge nicht gefunden – bitte starten";
+        BridgeText.Foreground = BrushCache.FromHex(Palette(running ? "success" : "danger"));
+    }
+
+    private string Palette(string token) =>
+        _s.Theme.Palette(_s.Settings.ThemeVariant, ActualTheme == ElementTheme.Dark, _s.Settings.Accent).TryGetValue(token, out var hex) ? hex : "#8B7CFF";
+
+    private async void OnRecheckBridgeClick(object sender, RoutedEventArgs e)
+    {
+        if (_provider?.Setup.CheckLocalPort is { } port) await CheckBridgeAsync(port);
+    }
+
+    // ------------------------------------------------------------ Anmelden
+
+    private async Task LoginAsync()
+    {
+        if (_provider is null || OAuthOnlyWithoutClient) return;
+        var provider = _provider;
+        _cts = new CancellationTokenSource();
+        WaitingDetail.Text = OAuthAvailable
+            ? $"Melde dich im geöffneten Browserfenster bei {provider.Name} an und erlaube den Zugriff für Lu-Mail."
+            : $"Gib im geöffneten Browserfenster deine E-Mail-Adresse und dein {provider.PasswordLabel} ein.";
+        ShowStep(Step.Waiting);
+        try
+        {
+            AddedAccount = await _s.Setup.AddAccountAsync(provider, EmailLooksValid ? Email : null, _cts.Token, _servers);
+            SuccessText.Text = $"✓ {AddedAccount.Email} wurde hinzugefügt";
+            ShowStep(Step.Success);
+            await Task.Delay(1500);
             Hide();
         }
         catch (OperationCanceledException)
         {
-            ShowWaiting(false, "");
+            if (_step == Step.Waiting) ShowStep(Step.Provider);
         }
         catch (Exception ex)
         {
-            ShowWaiting(false, "");
-            ErrorBar.Message = ex.Message;
-            ErrorBar.IsOpen = true;
+            HintBar.Severity = InfoBarSeverity.Error;
+            HintBar.Title = "Anmeldung fehlgeschlagen";
+            HintBar.Message = ex is TimeoutException
+                ? "Die Anmeldung im Browser wurde nicht rechtzeitig abgeschlossen. Bitte versuche es erneut."
+                : ex.Message;
+            HintBar.IsOpen = true;
+            ShowStep(Step.Provider, retry: true);
         }
         finally
         {
@@ -115,12 +282,68 @@ public sealed partial class AddAccountDialog : ContentDialog
 
     private void OnCancelWaitingClick(object sender, RoutedEventArgs e) => _cts?.Cancel();
 
-    private void OnClosing(ContentDialog sender, ContentDialogClosingEventArgs args) => _cts?.Cancel();
+    // ------------------------------------------------------------ Fußzeile
 
-    private void ShowWaiting(bool waiting, string detail)
+    private async void OnPrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
-        ChoosePanel.Visibility = waiting ? Visibility.Collapsed : Visibility.Visible;
-        WaitingPanel.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
-        WaitingDetail.Text = detail;
+        args.Cancel = true; // Dialog bleibt offen; wir steuern die Schritte selbst.
+        switch (_step)
+        {
+            case Step.Email:
+                await DiscoverAsync();
+                break;
+            case Step.Provider:
+                await LoginAsync();
+                break;
+        }
+    }
+
+    private void OnSecondaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    {
+        args.Cancel = true;
+        if (_step == Step.Provider) ShowStep(Step.Email);
+    }
+
+    private bool _retry;
+
+    private void ShowStep(Step step, bool retry = false)
+    {
+        _step = step;
+        _retry = retry;
+        Step1Panel.Visibility = step == Step.Email ? Visibility.Visible : Visibility.Collapsed;
+        Step2Panel.Visibility = step == Step.Provider ? Visibility.Visible : Visibility.Collapsed;
+        WaitingPanel.Visibility = step == Step.Waiting ? Visibility.Visible : Visibility.Collapsed;
+        SuccessPanel.Visibility = step == Step.Success ? Visibility.Visible : Visibility.Collapsed;
+        if (step == Step.Email) EmailBox.Focus(FocusState.Programmatic);
+        UpdateButtons();
+    }
+
+    private void UpdateButtons()
+    {
+        switch (_step)
+        {
+            case Step.Email:
+                PrimaryButtonText = "Weiter";
+                IsPrimaryButtonEnabled = EmailLooksValid && !_discovering;
+                SecondaryButtonText = "";
+                CloseButtonText = "Abbrechen";
+                break;
+            case Step.Provider:
+                PrimaryButtonText = _retry ? "Erneut versuchen" : LoginButtonText;
+                IsPrimaryButtonEnabled = !OAuthOnlyWithoutClient;
+                SecondaryButtonText = "Zurück";
+                CloseButtonText = "Abbrechen";
+                break;
+            case Step.Waiting:
+                PrimaryButtonText = "";
+                SecondaryButtonText = "";
+                CloseButtonText = "Abbrechen";
+                break;
+            case Step.Success:
+                PrimaryButtonText = "";
+                SecondaryButtonText = "";
+                CloseButtonText = "Schließen";
+                break;
+        }
     }
 }

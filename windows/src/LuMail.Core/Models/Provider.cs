@@ -33,6 +33,12 @@ public sealed class Provider
     /// <summary>„Andere (IMAP)“: Server werden pro Konto gewählt (<see cref="Account.CustomServers"/>).</summary>
     public bool CustomServers { get; set; }
 
+    /// <summary>MX-Host-Endungen für die Anbieter-Erkennung (z. B. Google Workspace → "google.com").</summary>
+    public List<string> MxSuffixes { get; set; } = new();
+
+    /// <summary>„So geht's“-Schritte und lokale Portprüfung für den Assistenten.</summary>
+    public ProviderSetup Setup { get; set; } = new();
+
     [JsonIgnore]
     public bool SupportsOAuth =>
         OAuth is not null && AuthMethods.Contains(Account.AuthOAuth2, StringComparer.OrdinalIgnoreCase);
@@ -68,6 +74,36 @@ public sealed class OAuthSettings
     public string? AppRegistrationUrl { get; set; }
 }
 
+/// <summary><c>providers.json → setup</c>.</summary>
+public sealed class ProviderSetup
+{
+    public List<SetupStep> PasswordSteps { get; set; } = new();
+
+    [JsonPropertyName("oauthSteps")]
+    public List<SetupStep> OAuthSteps { get; set; } = new();
+
+    /// <summary>Proton: 1143 – TCP-Test auf 127.0.0.1, ob die Bridge läuft.</summary>
+    public int? CheckLocalPort { get; set; }
+}
+
+/// <summary>Ein Schritt in „So geht's“ (optional mit Link-Button).</summary>
+public sealed class SetupStep
+{
+    public string Text { get; set; } = "";
+    public string? Url { get; set; }
+    public string? Button { get; set; }
+}
+
+/// <summary><c>providers.json → discovery</c>.</summary>
+public sealed class DiscoverySettings
+{
+    /// <summary>DoH-URL mit {domain}, Antwort im JSON-Format (application/dns-json).</summary>
+    public string MxLookup { get; set; } = "https://cloudflare-dns.com/dns-query?name={domain}&type=MX";
+    /// <summary>Autoconfig-URLs (Thunderbird-Format) mit {domain} und {email}.</summary>
+    public List<string> Autoconfig { get; set; } = new();
+    public int TimeoutSeconds { get; set; } = 6;
+}
+
 /// <summary>Regeln für eine Ordnerrolle (SPECIAL-USE-Attribute und bekannte Namen).</summary>
 public sealed class FolderRoleDefinition
 {
@@ -81,4 +117,5 @@ public sealed class ProviderCatalogDocument
     public int Version { get; set; }
     public List<Provider> Providers { get; set; } = new();
     public Dictionary<string, FolderRoleDefinition> FolderRoles { get; set; } = new();
+    public DiscoverySettings Discovery { get; set; } = new();
 }

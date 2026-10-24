@@ -11,10 +11,12 @@ public sealed class ProviderCatalog
 
     public IReadOnlyList<Provider> Providers { get; }
     public IReadOnlyDictionary<FolderRole, FolderRoleDefinition> FolderRoles { get; }
+    public DiscoverySettings Discovery { get; }
 
     private ProviderCatalog(ProviderCatalogDocument doc)
     {
         Providers = doc.Providers;
+        Discovery = doc.Discovery ?? new DiscoverySettings();
         _byId = doc.Providers.ToDictionary(p => p.Id, StringComparer.OrdinalIgnoreCase);
         var roles = new Dictionary<FolderRole, FolderRoleDefinition>();
         foreach (var (key, def) in doc.FolderRoles)

@@ -20,6 +20,12 @@
                       LogicalName="LuMail.Shared.%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Eingebaute OAuth-Client-IDs (FUNKTIONEN §18): im Repository "{}", die CI füllt die Datei aus Secrets. -->
+  <ItemGroup>
+    <None Remove="BuiltInOAuth.json" />
+    <EmbeddedResource Include="BuiltInOAuth.json" LogicalName="LuMail.BuiltInOAuth.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="LuMail.Core.Tests" />
   </ItemGroup>
