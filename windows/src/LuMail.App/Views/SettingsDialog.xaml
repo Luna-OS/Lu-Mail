@@ -28,6 +28,17 @@
                            Text="Externe Bilder können verraten, wann und wo du eine E-Mail geöffnet hast (Tracking-Pixel)." />
             </StackPanel>
 
+            <StackPanel Spacing="6">
+                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Updates" />
+                <TextBlock x:Name="VersionText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
+                <ComboBox x:Name="UpdateModeBox" MinWidth="200" SelectionChanged="OnUpdateModeChanged" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button x:Name="CheckUpdatesButton" Click="OnCheckUpdatesClick" Content="Jetzt nach Updates suchen" />
+                    <ProgressRing x:Name="CheckUpdatesRing" Width="20" Height="20" IsActive="False" />
+                </StackPanel>
+                <TextBlock x:Name="UpdateStatusText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
+            </StackPanel>
+
             <StackPanel Spacing="8">
                 <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Konten" />
                 <TextBlock x:Name="NoAccountsText" Foreground="{ThemeResource LuTextSecondary}" Text="Noch keine Konten eingerichtet." Visibility="Collapsed" />

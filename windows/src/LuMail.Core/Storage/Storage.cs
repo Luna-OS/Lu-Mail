@@ -267,6 +267,10 @@ public sealed class AppSettings
     public bool SeparateCategories { get; set; } = true;
     public bool AlwaysLoadExternalImages { get; set; }
 
+    /// <summary>Einstellung „Updates“: "Automatic" (Standard), "NotifyOnly" oder "Off".</summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+    public Update.UpdateMode Updates { get; set; } = Update.UpdateMode.Automatic;
+
     public static AppSettings Load(string path)
     {
         try

@@ -1,5 +1,6 @@
 using LuMail.App.Services;
 using LuMail.Core.Models;
+using LuMail.Core.Update;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Shapes;
@@ -27,6 +28,25 @@ public sealed partial class SettingsDialog : ContentDialog
         CategoriesSwitch.IsOn = _s.Settings.SeparateCategories;
         ExternalSwitch.IsOn = _s.Settings.AlwaysLoadExternalImages;
         DataFolderText.Text = _s.Paths.BaseDirectory;
+
+        var updates = App.Updates;
+        VersionText.Text = $"Installierte Version: {updates.CurrentVersion} ({updates.PlatformKey})"
+                           + (updates.IsDevBuild ? " – Entwicklerversion, keine automatische Prüfung" : "");
+        foreach (var (mode, label) in new[]
+                 {
+                     (UpdateMode.Automatic, "Automatisch"),
+                     (UpdateMode.NotifyOnly, "Nur benachrichtigen"),
+                     (UpdateMode.Off, "Aus"),
+                 })
+        {
+            UpdateModeBox.Items.Add(new ComboBoxItem { Content = label, Tag = mode });
+        }
+        UpdateModeBox.SelectedIndex = _s.Settings.Updates switch
+        {
+            UpdateMode.NotifyOnly => 1,
+            UpdateMode.Off => 2,
+            _ => 0,
+        };
         _loading = false;
     }
 
@@ -107,6 +127,29 @@ public sealed partial class SettingsDialog : ContentDialog
         finally
         {
             _confirmingRemoval = false;
+        }
+    }
+
+    private void OnUpdateModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || (UpdateModeBox.SelectedItem as ComboBoxItem)?.Tag is not UpdateMode mode) return;
+        _s.Settings.Updates = mode;
+        _s.SaveSettings();
+    }
+
+    private async void OnCheckUpdatesClick(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesButton.IsEnabled = false;
+        CheckUpdatesRing.IsActive = true;
+        UpdateStatusText.Text = "Suche nach Updates …";
+        try
+        {
+            UpdateStatusText.Text = await App.Updates.CheckNowAsync();
+        }
+        finally
+        {
+            CheckUpdatesRing.IsActive = false;
+            CheckUpdatesButton.IsEnabled = true;
         }
     }
 

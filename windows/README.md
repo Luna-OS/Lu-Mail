@@ -107,6 +107,24 @@ Proton funktioniert nur über die **Proton Mail Bridge**. In der Bridge unter
 | „Absender immer als … einsortieren“ | Aktionsleiste → „Einsortieren“ |
 | Externe Bilder laden | Hinweisleiste „Externe Inhalte laden“ (oder dauerhaft in den Einstellungen) |
 
+## Updates
+
+Lu-Mail prüft 15 Sekunden nach dem Start und danach alle 6 Stunden das neueste GitHub-Release
+(Einstellungen in [`shared/update.json`](../shared/update.json)). Ist es neuer, wird das passende Setup
+(`…-Windows-x64-Setup.exe` bzw. `…-arm64-Setup.exe`) nach `%TEMP%\LuMail-Update` geladen und gegen
+`SHA256SUMS.txt` geprüft. Einstellung **Updates**:
+
+- **Automatisch** (Standard): Download im Hintergrund, Hinweis „Lu-Mail X.Y.Z ist bereit“ mit „Jetzt neu starten“.
+  Ohne Klick wird das Update beim Schließen von Lu-Mail still installiert.
+- **Nur benachrichtigen**: Hinweis mit „Herunterladen und neu starten“.
+- **Aus**: nur manuell über „Jetzt nach Updates suchen“.
+
+Installiert wird mit `Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1|0`
+(Installation pro Benutzer nach `%LOCALAPPDATA%\Programs\Lu-Mail`, siehe [`installer/`](installer)).
+Entwickler-Builds mit Version `0.0.0` prüfen nicht automatisch.
+
+Installer bauen: `pwsh windows/installer/build-installer.ps1 -Arch x64 -Version 0.2.0` (benötigt Inno Setup 6).
+
 ## Datenschutz
 
 - HTML-Mails werden in WebView2 **ohne JavaScript** angezeigt. Vorangestellt ist die CSP

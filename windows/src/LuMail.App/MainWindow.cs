@@ -37,6 +37,9 @@ public sealed class MainWindow : Window
 
         AppWindow.Resize(new SizeInt32 { Width = 1360, Height = 860 });
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "LuMail.ico"));
+
+        // Geladenes Update beim Beenden still installieren (ohne Neustart).
+        Closed += (_, _) => App.Updates?.InstallOnExitIfReady();
     }
 
     public void ShowError(string message) => _page.ShowMessage(message, isError: true);

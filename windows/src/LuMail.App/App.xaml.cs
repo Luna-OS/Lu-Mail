@@ -11,6 +11,9 @@ public partial class App : Application
     /// <summary>Gemeinsame Dienste (Composition Root).</summary>
     public static AppServices Services { get; private set; } = null!;
 
+    /// <summary>Auto-Updater.</summary>
+    public static UpdateManager Updates { get; private set; } = null!;
+
     public App()
     {
         // WebView2 legt sonst seinen Datenordner neben der .exe an (evtl. schreibgeschützt).
@@ -25,6 +28,7 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         Services = AppServices.Create();
+        Updates = new UpdateManager(Services);
         _window = new MainWindow();
         _window.Activate();
     }

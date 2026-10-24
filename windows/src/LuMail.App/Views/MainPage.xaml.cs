@@ -65,6 +65,9 @@ public sealed partial class MainPage : Page
         Vm.ErrorOccurred += (_, message) => ShowMessage(message, isError: true);
 
         StartRefreshTimer();
+        App.Updates.StateChanged += (_, _) => UpdateUpdateBar();
+        App.Updates.Start(DispatcherQueue);
+        UpdateUpdateBar();
         await InitWebViewAsync();
         UpdateListHeader();
         await Vm.RefreshAllAsync();
@@ -560,6 +563,71 @@ public sealed partial class MainPage : Page
         }
         UpdateListHeader();
     }
+
+    // ======================================================== Updates
+
+    /// <summary>Zeigt den Update-Hinweis passend zum Zustand des Updaters.</summary>
+    private void UpdateUpdateBar()
+    {
+        var updates = App.Updates;
+        var info = updates.Update;
+        UpdateProgress.Visibility = Visibility.Collapsed;
+        UpdatePrimaryButton.IsEnabled = true;
+        UpdateNotesButton.Visibility = info?.HtmlUrl is null ? Visibility.Collapsed : Visibility.Visible;
+
+        switch (updates.State)
+        {
+            case UpdateState.Ready when info is not null:
+                UpdateBar.Severity = InfoBarSeverity.Success;
+                UpdateBar.Title = $"Lu-Mail {info.Version} ist bereit.";
+                UpdateBar.Message = "Das Update wird beim Beenden automatisch installiert.";
+                UpdatePrimaryButton.Content = "Jetzt neu starten";
+                UpdatePrimaryButton.Visibility = Visibility.Visible;
+                UpdateBar.IsOpen = true;
+                break;
+
+            case UpdateState.Available when info is not null:
+                UpdateBar.Severity = InfoBarSeverity.Informational;
+                UpdateBar.Title = $"Lu-Mail {info.Version} ist verfügbar.";
+                UpdateBar.Message = $"Installiert ist Version {updates.CurrentVersion}.";
+                UpdatePrimaryButton.Content = "Herunterladen und neu starten";
+                UpdatePrimaryButton.Visibility = Visibility.Visible;
+                UpdateBar.IsOpen = true;
+                break;
+
+            case UpdateState.Downloading when info is not null && updates.IsInteractive:
+                UpdateBar.Severity = InfoBarSeverity.Informational;
+                UpdateBar.Title = $"Lu-Mail {info.Version} wird heruntergeladen …";
+                UpdateBar.Message = $"{updates.Progress:P0}";
+                UpdateProgress.Value = updates.Progress;
+                UpdateProgress.Visibility = Visibility.Visible;
+                UpdatePrimaryButton.IsEnabled = false;
+                UpdateBar.IsOpen = true;
+                break;
+
+            case UpdateState.Failed when updates.IsInteractive && info is not null:
+                UpdateBar.Severity = InfoBarSeverity.Error;
+                UpdateBar.Title = "Update fehlgeschlagen";
+                UpdateBar.Message = updates.LastError ?? "";
+                UpdatePrimaryButton.Content = "Erneut versuchen";
+                UpdatePrimaryButton.Visibility = Visibility.Visible;
+                UpdateBar.IsOpen = true;
+                break;
+
+            default:
+                // Hintergrundprüfung/-download: nichts anzeigen.
+                break;
+        }
+    }
+
+    private async void OnUpdatePrimaryClick(object sender, RoutedEventArgs e)
+    {
+        var updates = App.Updates;
+        if (updates.State == UpdateState.Ready) updates.InstallAndRestart();
+        else await updates.DownloadAndRestartAsync();
+    }
+
+    private void OnUpdateNotesClick(object sender, RoutedEventArgs e) => App.Updates.OpenReleaseNotes();
 
     // ===================================================== Meldungen
 
