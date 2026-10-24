@@ -1,0 +1,17 @@
+# macOS / Swift
+.DS_Store
+macos/.build/
+macos/build/
+macos/.swiftpm/
+*.xcodeproj/xcuserdata/
+
+# Windows / .NET
+bin/
+obj/
+publish/
+*.user
+.vs/
+TestResults/
+
+# Eigene OAuth-Zugangsdaten niemals einchecken
+oauth.json

@@ -1,0 +1,12 @@
+<Project>
+  <!-- Gemeinsame Einstellungen für alle Lu-Mail-Projekte unter windows/ -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <Company>Lu-Mail</Company>
+    <Product>Lu-Mail</Product>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>

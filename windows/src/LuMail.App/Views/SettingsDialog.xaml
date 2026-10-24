@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog
+    x:Class="LuMail.App.Views.SettingsDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Einstellungen"
+    CloseButtonText="Schließen"
+    DefaultButton="Close"
+    Style="{StaticResource DefaultContentDialogStyle}">
+
+    <ScrollViewer MinWidth="440" MaxWidth="460" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+            <StackPanel Spacing="6">
+                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Automatisch aktualisieren" />
+                <ComboBox x:Name="IntervalBox" MinWidth="200" SelectionChanged="OnIntervalChanged" />
+            </StackPanel>
+
+            <ToggleSwitch x:Name="CategoriesSwitch" Header="Kategorien im Posteingang trennen"
+                          OffContent="Aus" OnContent="An" Toggled="OnCategoriesToggled" />
+
+            <StackPanel Spacing="4">
+                <ToggleSwitch x:Name="ExternalSwitch" Header="Externe Bilder immer laden"
+                              OffContent="Aus (empfohlen)" OnContent="An" Toggled="OnExternalToggled" />
+                <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                           Text="Externe Bilder können verraten, wann und wo du eine E-Mail geöffnet hast (Tracking-Pixel)." />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Konten" />
+                <TextBlock x:Name="NoAccountsText" Foreground="{ThemeResource LuTextSecondary}" Text="Noch keine Konten eingerichtet." Visibility="Collapsed" />
+                <StackPanel x:Name="AccountsPanel" Spacing="6" />
+            </StackPanel>
+
+            <StackPanel Spacing="4">
+                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Datenordner" />
+                <TextBlock x:Name="DataFolderText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                <HyperlinkButton Click="OnOpenDataFolderClick" Content="Ordner öffnen (oauth.json, accounts.json, rules.json)" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>

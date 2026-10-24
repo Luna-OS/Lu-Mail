@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; img-src data:">
+<meta name="referrer" content="no-referrer">
+<title>Lu-Mail – Bei {{PROVIDER_NAME}} anmelden</title>
+<style>
+  :root {
+    --bg: #F7F6FF; --surface: #FFFFFF; --border: #DDDAF2; --text: #1B1A33; --text2: #5E5B80;
+    --accent: #6B5BEF; --accent-text: #FFFFFF; --danger: #E11D48; --provider: {{PROVIDER_COLOR}};
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0F1020; --surface: #1A1C3A; --border: #2A2C4F; --text: #ECEBFF; --text2: #A6A3C9;
+      --accent: #8B7CFF; --accent-text: #0F1020; --danger: #FF6B81;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
+    background: radial-gradient(ellipse at top, color-mix(in srgb, var(--accent) 18%, var(--bg)) 0%, var(--bg) 60%);
+    color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; box-shadow: 0 20px 60px rgba(15, 16, 32, .18);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--text2); font-size: 13px; margin-bottom: 18px; }
+  .moon { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); box-shadow: inset -6px -2px 0 0 var(--surface); }
+  h1 { font-size: 21px; margin: 0 0 6px; display: flex; align-items: center; gap: 10px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--provider); flex: none; }
+  p.help { color: var(--text2); font-size: 13.5px; margin: 0 0 18px; }
+  a { color: var(--accent); }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  button {
+    width: 100%; margin-top: 22px; padding: 12px; border: 0; border-radius: 10px; cursor: pointer;
+    background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
+  }
+  .error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; margin-bottom: 8px; }
+  .error:empty { display: none; }
+  .foot { margin-top: 18px; font-size: 12px; color: var(--text2); text-align: center; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><span class="moon" aria-hidden="true"></span>Lu-Mail</div>
+    <h1><span class="dot" aria-hidden="true"></span>Bei {{PROVIDER_NAME}} anmelden</h1>
+    <p class="help">{{PASSWORD_HELP}} <a href="{{HELP_URL}}" target="_blank" rel="noopener noreferrer">Anleitung öffnen ↗</a></p>
+    <div class="error" role="alert">{{ERROR}}</div>
+    <form method="post" action="/login" autocomplete="on">
+      <input type="hidden" name="state" value="{{STATE}}">
+      <label for="email">E-Mail-Adresse</label>
+      <input id="email" name="email" type="email" required autofocus autocomplete="username" value="{{EMAIL}}" placeholder="name@beispiel.de">
+      <label for="password">{{PASSWORD_LABEL}}</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+      <button type="submit">Anmelden und zu Lu-Mail zurückkehren</button>
+    </form>
+    <p class="foot">Diese Seite läuft lokal auf deinem Rechner (127.0.0.1). Deine Zugangsdaten gehen direkt an Lu-Mail und werden im Schlüsselbund bzw. in der Windows-Anmeldeinformationsverwaltung gespeichert.</p>
+  </main>
+</body>
+</html>

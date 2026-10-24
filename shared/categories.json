@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "categories": [
+    { "id": "primary", "name": "Posteingang", "icon": "tray", "gmailQuery": "category:primary" },
+    { "id": "promotions", "name": "Werbung", "icon": "tag", "gmailQuery": "category:promotions" },
+    { "id": "social", "name": "Soziale Netzwerke", "icon": "person.2", "gmailQuery": "category:social" },
+    { "id": "updates", "name": "Updates", "icon": "bell", "gmailQuery": "category:updates" },
+    { "id": "forums", "name": "Foren", "icon": "bubble.left.and.bubble.right", "gmailQuery": "category:forums" }
+  ],
+  "rules": {
+    "social": {
+      "senderDomains": [
+        "facebook.com", "facebookmail.com", "instagram.com", "linkedin.com", "x.com", "twitter.com",
+        "tiktok.com", "pinterest.com", "reddit.com", "redditmail.com", "snapchat.com", "discord.com",
+        "telegram.org", "whatsapp.com", "threads.net", "youtube.com", "twitch.tv", "xing.com",
+        "vk.com", "ok.ru", "my.mail.ru", "tumblr.com", "mastodon.social", "bsky.app", "quora.com"
+      ]
+    },
+    "forums": {
+      "senderDomains": ["googlegroups.com", "discoursemail.com", "groups.io", "lists.sourceforge.net"],
+      "headers": ["List-Post"]
+    },
+    "updates": {
+      "subjectKeywords": [
+        "rechnung", "invoice", "receipt", "quittung", "beleg", "bestellung", "bestellbestätigung", "order",
+        "versand", "versendet", "shipped", "shipping", "lieferung", "delivery", "zustellung", "sendungsverfolgung",
+        "passwort", "password", "anmeldung", "sign-in", "login", "sicherheitswarnung", "security alert",
+        "bestätigungscode", "verification code", "verify", "bestätige", "confirm", "kontoauszug", "statement",
+        "zahlung", "payment", "abbuchung", "termin", "appointment", "buchung", "booking", "ticket",
+        "счёт", "счет", "заказ", "доставка", "пароль", "код подтверждения", "платёж", "платеж"
+      ],
+      "senderLocalParts": [
+        "noreply", "no-reply", "donotreply", "do-not-reply", "notification", "notifications", "notify",
+        "alert", "alerts", "account", "accounts", "security", "billing", "invoice", "receipts", "orders",
+        "order", "shipping", "service", "support", "info-noreply", "mailer-daemon", "postmaster"
+      ]
+    },
+    "promotions": {
+      "headers": ["List-Unsubscribe"],
+      "precedence": ["bulk", "list", "junk"],
+      "senderLocalParts": [
+        "newsletter", "newsletters", "news", "marketing", "promo", "promotions", "offers", "angebote",
+        "deals", "sale", "shop", "store", "hello", "hallo", "team", "mailing", "campaign", "email",
+        "rassylka", "akcii"
+      ],
+      "subjectKeywords": [
+        "rabatt", "% off", "sale", "angebot", "gutschein", "coupon", "gratis", "kostenlos", "newsletter",
+        "nur heute", "black friday", "cyber monday", "deal", "sparen", "jetzt kaufen", "exklusiv",
+        "скидк", "акци", "распродаж", "подарок"
+      ]
+    }
+  },
+  "algorithm": [
+    "1. Nutzer-Regel (Absender-Adresse oder -Domain manuell einer Kategorie zugeordnet) gewinnt immer.",
+    "2. Gmail: Kategorie kommt vom Server (X-GM-RAW category:...). Nur wenn der Server keine liefert, geht es lokal weiter.",
+    "3. social: Absender-Domain ist (Sub-)Domain von rules.social.senderDomains.",
+    "4. forums: Absender-Domain passt zu rules.forums.senderDomains ODER einer der rules.forums.headers ist vorhanden.",
+    "5. updates: Betreff enthält eines der rules.updates.subjectKeywords.",
+    "6. promotions: einer der rules.promotions.headers ist vorhanden ODER Header Precedence ist in rules.promotions.precedence ODER lokaler Teil der Absender-Adresse ist in rules.promotions.senderLocalParts ODER Betreff enthält eines der rules.promotions.subjectKeywords.",
+    "7. updates: lokaler Teil der Absender-Adresse ist in rules.updates.senderLocalParts.",
+    "8. Sonst: primary.",
+    "Vergleiche sind immer klein geschrieben (case-insensitive). Domain-Treffer: domain == d ODER domain endet auf '.' + d. Stichwort-Treffer: Teilstring im kleingeschriebenen Betreff."
+  ]
+}

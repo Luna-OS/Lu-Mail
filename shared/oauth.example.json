@@ -1,0 +1,11 @@
+{
+  "_hinweis": "Kopiere diese Datei als oauth.json nach ~/Library/Application Support/LuMail/ (macOS) bzw. %APPDATA%\\LuMail\\ (Windows) und trage deine eigenen OAuth-Client-Daten ein. Ohne Eintrag nutzt Lu-Mail für diesen Anbieter die Browser-Anmeldung mit App-Passwort. Siehe docs/ANMELDUNG.md.",
+  "gmail": {
+    "clientId": "",
+    "clientSecret": ""
+  },
+  "mailru": {
+    "clientId": "",
+    "clientSecret": ""
+  }
+}

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Plattformneutraler Kern: Modelle, Klassifizierer, OAuth, Browser-Anmeldung, IMAP/SMTP (MailKit).
+       Keine Windows-APIs, damit die Tests auch unter Linux/macOS laufen. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LuMail.Core</RootNamespace>
+    <AssemblyName>LuMail.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.16.0" />
+  </ItemGroup>
+
+  <!-- shared/ ist die gemeinsame Quelle für macOS und Windows: direkt einbetten, nicht kopieren.
+       Logischer Name = "LuMail.Shared.<Dateiname>" (unabhängig vom Betriebssystem/Pfadtrenner). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\shared\**\*.json;..\..\..\shared\login\*.html"
+                      LinkBase="Shared"
+                      LogicalName="LuMail.Shared.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LuMail.Core.Tests" />
+  </ItemGroup>
+
+</Project>
