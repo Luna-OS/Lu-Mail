@@ -16,9 +16,10 @@ on:
         required: false
         default: ""
 
+# Neue Läufe warten, bis der vorige fertig ist – so geht kein macOS-/Windows-Ergebnis verloren.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   version:
