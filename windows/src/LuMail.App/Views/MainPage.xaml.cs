@@ -283,7 +283,7 @@ public sealed partial class MainPage : Page
 
         var initial = item.Sender.Trim().FirstOrDefault(char.IsLetterOrDigit);
         ReaderAvatarText.Text = initial == default ? "?" : char.ToUpper(initial, CultureInfo.CurrentCulture).ToString();
-        ReaderAvatar.Background = BrushCache.ForCategory(item.Category ?? MessageCategory.Primary);
+        ReaderAvatar.Background = BrushCache.ForCategory(item.CategoryId ?? "primary");
         ReaderAccountChip.Background = item.ProviderBrush;
         ReaderAccountText.Text = item.Account.Email;
         UpdateActionButtons();

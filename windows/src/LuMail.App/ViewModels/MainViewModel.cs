@@ -204,7 +204,7 @@ public sealed class MainViewModel : ObservableObject
                     {
                         items.Add(new SidebarItem
                         {
-                            Kind = SidebarItemKind.Folder, Target = SidebarTarget.Category, Category = category,
+                            Kind = SidebarItemKind.Folder, Target = SidebarTarget.Category, CategoryId = category.ToId(),
                             Title = _s.Categories.DisplayName(category), Glyph = CategoryGlyph(category),
                             Account = account, Provider = provider, FolderPath = "INBOX", Role = FolderRole.Inbox,
                             Key = $"cat:{account.Id}:{category.ToId()}", Indent = new Thickness(20, 0, 0, 0),
@@ -215,7 +215,7 @@ public sealed class MainViewModel : ObservableObject
                 {
                     items.Add(new SidebarItem
                     {
-                        Kind = SidebarItemKind.Folder, Target = SidebarTarget.Category, Category = null,
+                        Kind = SidebarItemKind.Folder, Target = SidebarTarget.Category, CategoryId = null,
                         Title = "Posteingang", Glyph = "", Account = account, Provider = provider,
                         FolderPath = "INBOX", Role = FolderRole.Inbox,
                         Key = $"cat:{account.Id}:inbox", Indent = new Thickness(20, 0, 0, 0),
@@ -261,11 +261,11 @@ public sealed class MainViewModel : ObservableObject
         {
             item.Unread = item.Target switch
             {
-                SidebarTarget.AllInboxes => AllInboxItems.Count(m => !m.Seen && (!separate || m.Category == MessageCategory.Primary)),
+                SidebarTarget.AllInboxes => AllInboxItems.Count(m => !m.Seen && (!separate || m.CategoryId == "primary")),
                 SidebarTarget.Unread => AllInboxItems.Count(m => !m.Seen),
                 SidebarTarget.Flagged => AllInboxItems.Count(m => m.Flagged && !m.Seen),
                 SidebarTarget.Category when item.Account is not null => State(item.Account.Id).Inbox
-                    .Count(m => !m.Seen && (item.Category is null || m.Category == item.Category)),
+                    .Count(m => !m.Seen && (item.CategoryId is null || m.CategoryId == item.CategoryId)),
                 SidebarTarget.Folder when item.Account is not null =>
                     State(item.Account.Id).Folders.FirstOrDefault(f => f.Path == item.FolderPath)?.Unread ?? 0,
                 _ => 0,
@@ -300,7 +300,7 @@ public sealed class MainViewModel : ObservableObject
         switch (item.Target)
         {
             case SidebarTarget.AllInboxes:
-                list = AllInboxItems.Where(m => !separate || m.Category == MessageCategory.Primary).ToList();
+                list = AllInboxItems.Where(m => !separate || m.CategoryId == "primary").ToList();
                 break;
             case SidebarTarget.Unread:
                 list = AllInboxItems.Where(m => !m.Seen).ToList();
@@ -309,7 +309,7 @@ public sealed class MainViewModel : ObservableObject
                 list = AllInboxItems.Where(m => m.Flagged).ToList();
                 break;
             case SidebarTarget.Category when item.Account is not null:
-                list = State(item.Account.Id).Inbox.Where(m => item.Category is null || m.Category == item.Category).ToList();
+                list = State(item.Account.Id).Inbox.Where(m => item.CategoryId is null || m.CategoryId == item.CategoryId).ToList();
                 break;
             case SidebarTarget.Folder when item.Account is not null && item.FolderPath is not null:
                 var state = State(item.Account.Id);
@@ -446,21 +446,21 @@ public sealed class MainViewModel : ObservableObject
     public void SetSenderRule(MessageItem item, MessageCategory category)
     {
         if (string.IsNullOrWhiteSpace(item.Summary.FromAddress)) return;
-        _s.SenderRules.Set(item.Summary.FromAddress, category);
+        _s.Rules.SetSender(item.Summary.FromAddress, category);
         foreach (var m in AllInboxItems)
         {
-            if (_s.SenderRules.Lookup(m.Summary.FromAddress) is { } c) m.Category = c;
+            if (_s.Rules.LookupSender(m.Summary.FromAddress) is { } c) m.CategoryId = c;
         }
         RecountSidebar();
         if (Selected?.Target is SidebarTarget.Category or SidebarTarget.AllInboxes) _ = ShowSelectedAsync(reload: false);
     }
 
     public bool HasSenderRule(MessageItem item) =>
-        _s.SenderRules.All.ContainsKey(item.Summary.FromAddress.Trim().ToLowerInvariant());
+        _s.Rules.Senders.ContainsKey(item.Summary.FromAddress.Trim().ToLowerInvariant());
 
     public async Task RemoveSenderRuleAsync(MessageItem item)
     {
-        if (_s.SenderRules.Remove(item.Summary.FromAddress)) await RefreshAllAsync();
+        if (_s.Rules.RemoveSender(item.Summary.FromAddress)) await RefreshAllAsync();
     }
 
     public Account? FindAccount(string id) => Accounts.FirstOrDefault(a => a.Id == id);

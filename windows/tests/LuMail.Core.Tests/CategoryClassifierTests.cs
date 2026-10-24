@@ -10,8 +10,9 @@ public class CategoryClassifierTests
     private static readonly CategoryCatalog Catalog = CategoryCatalog.LoadEmbedded();
 
     private static MessageCategory Classify(string from, string subject = "Hallo",
-        Dictionary<string, string>? headers = null, MessageCategory? server = null, ISenderRuleLookup? rules = null) =>
-        new CategoryClassifier(Catalog, rules).Classify(new ClassificationInput(from, subject, headers, server));
+        Dictionary<string, string>? headers = null, MessageCategory? server = null, ICategoryRuleSource? rules = null) =>
+        MessageCategories.TryParse(new CategoryClassifier(Catalog, rules).Classify(new ClassificationInput(from, subject, headers, server)), out var c)
+            ? c : throw new InvalidOperationException("keine eingebaute Kategorie");
 
     private static Dictionary<string, string> H(string name, string value) =>
         new(StringComparer.OrdinalIgnoreCase) { [name] = value };
@@ -28,8 +29,8 @@ public class CategoryClassifierTests
     [Fact]
     public void Step1_UserRuleWinsOverEverything()
     {
-        var rules = SenderRuleStore.InMemory();
-        rules.Set("friend@facebook.com", MessageCategory.Primary);
+        var rules = RuleStore.InMemory();
+        rules.SetSender("friend@facebook.com", MessageCategory.Primary);
         // Ohne Regel wäre es social; mit Serverkategorie wäre es updates – die Regel gewinnt immer.
         Assert.Equal(MessageCategory.Primary, Classify("friend@facebook.com", rules: rules));
         Assert.Equal(MessageCategory.Primary, Classify("Friend@Facebook.com", server: MessageCategory.Updates, rules: rules));
@@ -38,9 +39,9 @@ public class CategoryClassifierTests
     [Fact]
     public void Step1_DomainRuleAppliesToSubdomains_AddressRuleBeatsDomainRule()
     {
-        var rules = SenderRuleStore.InMemory();
-        rules.Set("shop.de", MessageCategory.Promotions);
-        rules.Set("rechnung@shop.de", MessageCategory.Updates);
+        var rules = RuleStore.InMemory();
+        rules.SetSender("shop.de", MessageCategory.Promotions);
+        rules.SetSender("rechnung@shop.de", MessageCategory.Updates);
         Assert.Equal(MessageCategory.Promotions, Classify("info@mail.shop.de", rules: rules));
         Assert.Equal(MessageCategory.Updates, Classify("rechnung@shop.de", rules: rules));
         Assert.Equal(MessageCategory.Primary, Classify("someone@othershop.de", rules: rules));
@@ -143,5 +144,42 @@ public class CategoryClassifierTests
     {
         Assert.Equal(MessageCategory.Primary, Classify("oma@example.de", "Wie geht's?"));
         Assert.Equal(MessageCategory.Primary, Classify("", ""));
+    }
+
+    [Fact]
+    public void Rules_ComeAfterSenders_BeforeServerCategory_FirstMatchWins()
+    {
+        var rules = RuleStore.InMemory();
+        var invoices = rules.AddCategory("Rechnungen", "#22C55E", "doc.text");
+        Assert.Equal("custom-rechnungen", invoices.Id);
+        rules.AddRule(new ContentRule { Field = "subject", Contains = "RECHNUNG", Category = invoices.Id });
+        rules.AddRule(new ContentRule { Field = "subject", Contains = "rechnung", Category = "promotions" }); // nie erreicht
+        rules.AddRule(new ContentRule { Field = "from", Contains = "Chef", Category = "primary" });
+        rules.AddRule(new ContentRule { Field = "to", Contains = "team@firma.de", Category = "forums" });
+        var classifier = new CategoryClassifier(Catalog, rules);
+
+        // Regel schlägt Gmail-Serverkategorie und eingebaute Regeln.
+        Assert.Equal("custom-rechnungen", classifier.Classify(new ClassificationInput("x@shop.de", "Ihre Rechnung", null, MessageCategory.Promotions)));
+        Assert.Equal("primary", classifier.Classify(new ClassificationInput("newsletter@x.de", "Hallo", FromName: "Der Chef")));
+        Assert.Equal("forums", classifier.Classify(new ClassificationInput("a@b.de", "Info", To: new[] { "Team@Firma.de" })));
+        // senders gewinnt vor rules.
+        rules.SetSender("x@shop.de", MessageCategory.Social);
+        Assert.Equal("social", classifier.Classify(new ClassificationInput("x@shop.de", "Ihre Rechnung")));
+        // Ohne Treffer: eingebaute Regeln.
+        Assert.Equal("updates", classifier.Classify(new ClassificationInput("noreply@bank.de", "Information")));
+    }
+
+    [Fact]
+    public void RemovingCustomCategory_RemovesItsRulesAndSenders()
+    {
+        var rules = RuleStore.InMemory();
+        var c = rules.AddCategory("Rechnungen", "#22C55E");
+        rules.AddRule(new ContentRule { Field = "subject", Contains = "x", Category = c.Id });
+        rules.SetSender("a@b.de", c.Id);
+        Assert.Equal("custom-rechnungen-2", rules.AddCategory("Rechnungen", "#000000").Id);
+        Assert.True(rules.RemoveCategory(c.Id));
+        Assert.Empty(rules.Rules);
+        Assert.Null(rules.LookupSender("a@b.de"));
+        Assert.Equal("custom-oeffentlich-dienst", rules.AddCategory("Öffentlich / Dienst", "#111111").Id);
     }
 }

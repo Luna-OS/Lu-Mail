@@ -74,6 +74,7 @@ public sealed class MailFolder
     /// <summary>Gesetzt, wenn <see cref="IsCategory"/> wahr ist.</summary>
     public MessageCategory? Category { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? CategoryId => Category?.ToId();
 
     public override string ToString() => DisplayName;

@@ -69,7 +69,7 @@ public class LoopbackLoginTests
         var hostinger = Providers.Get("hostinger");
         var verifyCalls = 0;
 
-        var login = service.LoginWithPasswordAsync(hostinger, "max@meinedomain.de", (email, password, _) =>
+        var login = service.LoginWithPasswordAsync(hostinger, "max@meinedomain.de", (email, password, _, _) =>
         {
             verifyCalls++;
             return Task.FromResult(password == "richtig" ? null : "Anmeldung fehlgeschlagen: Passwort falsch.");
@@ -125,7 +125,7 @@ public class LoopbackLoginTests
         var opened = new TaskCompletionSource<Uri>();
         var service = new BrowserLoginService(u => opened.TrySetResult(u), new OAuthClient(new HttpClient()));
         using var cts = new CancellationTokenSource();
-        var login = service.LoginWithPasswordAsync(Providers.Get("proton"), null, (_, _, _) => Task.FromResult<string?>(null), cts.Token);
+        var login = service.LoginWithPasswordAsync(Providers.Get("proton"), null, (_, _, _, _) => Task.FromResult<string?>(null), cts.Token);
 
         var url = await WaitForUrl(opened);
         using var http = NewHttp();
@@ -239,7 +239,7 @@ public class LoopbackLoginTests
     {
         var service = new BrowserLoginService(_ => { }, new OAuthClient(new HttpClient())) { Timeout = TimeSpan.FromMilliseconds(200) };
         await Assert.ThrowsAsync<TimeoutException>(() =>
-            service.LoginWithPasswordAsync(Providers.Get("proton"), null, (_, _, _) => Task.FromResult<string?>(null)));
+            service.LoginWithPasswordAsync(Providers.Get("proton"), null, (_, _, _, _) => Task.FromResult<string?>(null)));
     }
 
     [Fact]

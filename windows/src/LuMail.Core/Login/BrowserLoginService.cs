@@ -10,10 +10,11 @@ namespace LuMail.Core.Login;
 public sealed record OAuthLoginResult(string Email, string? DisplayName, OAuthTokenResponse Tokens);
 
 /// <summary>Ergebnis der Passwort-Anmeldung (Zugangsdaten bereits per IMAP geprüft).</summary>
-public sealed record PasswordLoginResult(string Email, string Password);
+public sealed record PasswordLoginResult(string Email, string Password, CustomServerSettings? Servers = null);
 
 /// <summary>Prüft Zugangsdaten (IMAP LOGIN); liefert null bei Erfolg, sonst eine deutsche Fehlermeldung.</summary>
-public delegate Task<string?> CredentialVerifier(string email, string password, CancellationToken ct);
+/// <param name="servers">Nur bei „Andere (IMAP)“: die eingegebenen Server.</param>
+public delegate Task<string?> CredentialVerifier(string email, string password, CustomServerSettings? servers, CancellationToken ct);
 
 /// <summary>
 /// Anmeldung immer im Standardbrowser (ARCHITEKTUR.md „Anmeldung – immer über den Browser“).
@@ -106,6 +107,9 @@ public sealed class BrowserLoginService
         if (string.Equals(settings.EmailSource, "idToken", StringComparison.OrdinalIgnoreCase))
         {
             email = JwtDecoder.TryGetEmail(tokens.IdToken);
+            // Microsoft (Outlook) liefert die Adresse oft nur als preferred_username.
+            if (string.IsNullOrWhiteSpace(email) && JwtDecoder.TryGetClaim(tokens.IdToken, "preferred_username") is { } pu && pu.Contains('@'))
+                email = pu;
         }
         else if (string.Equals(settings.EmailSource, "userInfo", StringComparison.OrdinalIgnoreCase)
                  && !string.IsNullOrEmpty(settings.UserInfoEndpoint))
@@ -148,7 +152,7 @@ public sealed class BrowserLoginService
                 if (!StateEquals(pathState, state) || Volatile.Read(ref stateUsed) == 1)
                     return Done(404, "Link ungültig",
                         "Dieser Anmelde-Link ist ungültig oder abgelaufen. Bitte starte die Anmeldung in Lu-Mail erneut.");
-                return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, emailHint, null));
+                return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, emailHint, null, servers: null));
             }
 
             if (request.Path == "/login")
@@ -166,9 +170,17 @@ public sealed class BrowserLoginService
                 form.TryGetValue("email", out var email);
                 form.TryGetValue("password", out var password);
                 email = email?.Trim() ?? "";
+                CustomServerSettings? servers = null;
+                if (provider.CustomServers)
+                {
+                    var (parsed, serverError) = LoginTemplates.ParseCustomServers(form);
+                    servers = parsed;
+                    if (serverError is not null)
+                        return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, email, serverError, servers: servers));
+                }
                 if (email.Length == 0 || string.IsNullOrEmpty(password) || !email.Contains('@'))
                     return LoopbackResponse.Html(200,
-                        LoginTemplates.RenderLogin(provider, state, email, "Bitte gib deine vollständige E-Mail-Adresse und das Passwort ein."));
+                        LoginTemplates.RenderLogin(provider, state, email, "Bitte gib deine vollständige E-Mail-Adresse und das Passwort ein.", servers: servers));
 
                 await verifyLock.WaitAsync(rct).ConfigureAwait(false);
                 try
@@ -179,17 +191,17 @@ public sealed class BrowserLoginService
                     string? error;
                     try
                     {
-                        error = await verify(email, password, rct).ConfigureAwait(false);
+                        error = await verify(email, password, servers, rct).ConfigureAwait(false);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         error = ex.Message;
                     }
                     if (error is not null)
-                        return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, email, error));
+                        return LoopbackResponse.Html(200, LoginTemplates.RenderLogin(provider, state, email, error, servers: servers));
 
                     Interlocked.Exchange(ref stateUsed, 1);
-                    completion.TrySetResult(new PasswordLoginResult(email, password));
+                    completion.TrySetResult(new PasswordLoginResult(email, password, servers));
                     return Done(200, "Anmeldung erfolgreich",
                         $"{email} ist jetzt mit Lu-Mail verbunden. Du kannst dieses Fenster schließen und zu Lu-Mail zurückkehren.");
                 }

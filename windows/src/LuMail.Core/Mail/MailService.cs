@@ -31,18 +31,22 @@ public sealed class MailServiceOptions
 public sealed class MailService : IAsyncDisposable
 {
     /// <summary>Zusätzlich geladene Header für den Klassifizierer.</summary>
-    public static readonly string[] ClassifierHeaders = { "LIST-UNSUBSCRIBE", "LIST-ID", "LIST-POST", "PRECEDENCE" };
+    public static readonly string[] ClassifierHeaders =
+        { "LIST-UNSUBSCRIBE", "LIST-ID", "LIST-POST", "PRECEDENCE", "REFERENCES", "LIST-UNSUBSCRIBE-POST" };
+
+    /// <summary>Optionaler Offline-Cache für geöffnete Nachrichten (.eml).</summary>
+    public Storage.OfflineCache? Cache { get; set; }
 
     private readonly ProviderCatalog _providers;
     private readonly CategoryCatalog _categories;
     private readonly IMailCredentialSource _credentials;
-    private readonly ISenderRuleLookup? _senderRules;
+    private readonly ICategoryRuleSource? _senderRules;
     private readonly MailServiceOptions _options;
     private readonly FolderRoleResolver _roleResolver;
     private readonly ConcurrentDictionary<string, AccountSession> _sessions = new();
 
     public MailService(ProviderCatalog providers, CategoryCatalog categories, IMailCredentialSource credentials,
-        ISenderRuleLookup? senderRules = null, MailServiceOptions? options = null)
+        ICategoryRuleSource? senderRules = null, MailServiceOptions? options = null)
     {
         _providers = providers;
         _categories = categories;
@@ -70,29 +74,37 @@ public sealed class MailService : IAsyncDisposable
         return session.RunAsync<IReadOnlyList<MailFolder>>(async (client, token) =>
         {
             var personal = client.PersonalNamespaces.Count > 0 ? client.PersonalNamespaces[0] : new FolderNamespace('/', "");
-            IList<IMailFolder> folders;
-            try
-            {
-                folders = await client.GetFoldersAsync(personal, StatusItems.Unread | StatusItems.Count, false, token).ConfigureAwait(false);
-            }
-            catch (ImapCommandException)
-            {
-                folders = await client.GetFoldersAsync(personal, StatusItems.None, false, token).ConfigureAwait(false);
-            }
-
+            var folders = await client.GetFoldersAsync(personal, StatusItems.None, false, token).ConfigureAwait(false);
             var all = folders.ToList();
             if (!all.Any(f => string.Equals(f.FullName, "INBOX", StringComparison.OrdinalIgnoreCase)))
-            {
-                var inboxFolder = InboxOf(client);
-                all.Insert(0, inboxFolder);
-                try { await inboxFolder.StatusAsync(StatusItems.Unread | StatusItems.Count, token).ConfigureAwait(false); }
-                catch (ImapCommandException) { }
-            }
+                all.Insert(0, InboxOf(client));
 
             var infos = all.Select(f => new FolderInfo(f.FullName, f.DirectorySeparator, SpecialUse(f.Attributes),
                 f.Attributes.HasFlag(FolderAttributes.NoSelect) || f.Attributes.HasFlag(FolderAttributes.NonExistent))).ToList();
             var roles = _roleResolver.Resolve(infos);
             session.RolePaths = roles.ToDictionary(r => r.Value, r => r.Key);
+
+            // §7: STATUS (UNSEEN) für alle auswählbaren Ordner außer Gesendet, Entwürfe, Papierkorb und Archiv.
+            var unread = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var f in all)
+            {
+                var noSelect = f.Attributes.HasFlag(FolderAttributes.NoSelect) || f.Attributes.HasFlag(FolderAttributes.NonExistent);
+                var role = roles.TryGetValue(f.FullName, out var fr) ? fr : FolderRole.None;
+                if (!FolderStatusSelection.ShouldQuery(role, noSelect)) continue;
+                try
+                {
+                    if (f.IsOpen) unread[f.FullName] = await CountUnseenOpenAsync(f, token).ConfigureAwait(false);
+                    else
+                    {
+                        await f.StatusAsync(StatusItems.Unread, token).ConfigureAwait(false);
+                        unread[f.FullName] = f.Unread;
+                    }
+                }
+                catch (ImapCommandException)
+                {
+                    // Ordner ohne STATUS-Recht: kein Zähler.
+                }
+            }
 
             var result = new List<MailFolder>();
             foreach (var f in all)
@@ -105,7 +117,7 @@ public sealed class MailService : IAsyncDisposable
                     Path = f.FullName,
                     DisplayName = role != FolderRole.None ? role.GermanName() : DisplayPath(f.FullName, f.DirectorySeparator),
                     Role = role,
-                    Unread = f.Unread,
+                    Unread = unread.TryGetValue(f.FullName, out var u) ? u : 0,
                     Total = f.Count,
                     Separator = f.DirectorySeparator,
                 });
@@ -118,6 +130,10 @@ public sealed class MailService : IAsyncDisposable
                 .ToList();
         }, ct);
     }
+
+    /// <summary>STATUS auf den ausgewählten Ordner ist unzulässig → dort SEARCH UNSEEN.</summary>
+    private static async Task<int> CountUnseenOpenAsync(IMailFolder folder, CancellationToken ct) =>
+        (await folder.SearchAsync(SearchQuery.NotSeen, ct).ConfigureAwait(false)).Count;
 
     private static int IndexOf(IReadOnlyList<FolderRole> list, FolderRole role)
     {
@@ -174,7 +190,8 @@ public sealed class MailService : IAsyncDisposable
                     MessageCategory? server = null;
                     if (serverCategories is not null)
                         server = serverCategories.TryGetValue(s.UniqueId.Id, out var c) ? c : MessageCategory.Primary;
-                    model.Category = classifier.Classify(new ClassificationInput(model.FromAddress, model.Subject, HeadersOf(s), server));
+                    model.CategoryId = classifier.Classify(new ClassificationInput(model.FromAddress, model.Subject, HeadersOf(s), server,
+                        model.FromName, ToList(s)));
                     return model;
                 })
                 .OrderByDescending(m => m.Date)
@@ -217,7 +234,7 @@ public sealed class MailService : IAsyncDisposable
             var folder = await GetFolderAsync(client, folderPath, token).ConfigureAwait(false);
             await OpenAsync(folder, token).ConfigureAwait(false);
             await client.NoOpAsync(token).ConfigureAwait(false);
-            var summaries = await FetchNewestAsync(folder, _options.FolderFetchCount, withHeaders: false, token).ConfigureAwait(false);
+            var summaries = await FetchNewestAsync(folder, _options.FolderFetchCount, withHeaders: true, token).ConfigureAwait(false);
             return summaries.Select(s => ToModel(account.Id, folder.FullName, s)).OrderByDescending(m => m.Date).ToList();
         }, ct);
     }
@@ -245,6 +262,20 @@ public sealed class MailService : IAsyncDisposable
         return dict;
     }
 
+    private static string? HeaderValue(IMessageSummary s, string field)
+    {
+        if (s.Headers is null) return null;
+        var value = s.Headers[field];
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static IReadOnlyList<string> ToList(IMessageSummary s) =>
+        s.Envelope?.To is null && s.Envelope?.Cc is null
+            ? Array.Empty<string>()
+            : (s.Envelope!.To?.Mailboxes ?? Enumerable.Empty<MimeKit.MailboxAddress>())
+                .Concat(s.Envelope.Cc?.Mailboxes ?? Enumerable.Empty<MimeKit.MailboxAddress>())
+                .SelectMany(m => new[] { m.Address, m.Name ?? "" }).Where(x => x.Length > 0).ToList();
+
     private static MessageSummary ToModel(string accountId, string folderPath, IMessageSummary s)
     {
         var envelope = s.Envelope;
@@ -263,11 +294,41 @@ public sealed class MailService : IAsyncDisposable
             Seen = flags.HasFlag(MessageFlags.Seen),
             Flagged = flags.HasFlag(MessageFlags.Flagged),
             Preview = (s.PreviewText ?? "").Trim(),
+            Recipients = (envelope?.To?.Mailboxes ?? Enumerable.Empty<MailboxAddress>())
+                .Concat(envelope?.Cc?.Mailboxes ?? Enumerable.Empty<MailboxAddress>())
+                .Select(m => new MailAddress(string.IsNullOrEmpty(m.Name) ? null : m.Name, m.Address)).ToList(),
+            MessageId = envelope?.MessageId?.Trim('<', '>'),
+            InReplyTo = envelope?.InReplyTo?.Trim('<', '>'),
+            References = HeaderValue(s, "References") is { } refs ? MimeUtils.EnumerateReferences(refs).ToList() : new List<string>(),
+            ListUnsubscribe = HeaderValue(s, "List-Unsubscribe"),
+            ListUnsubscribePost = HeaderValue(s, "List-Unsubscribe-Post"),
         };
     }
 
-    /// <summary>Lädt die vollständige Nachricht; markiert sie beim Öffnen als gelesen (<c>UID STORE +FLAGS (\Seen)</c>).</summary>
-    public Task<MessageDetail> FetchMessageAsync(Account account, string folderPath, uint uid, bool markSeen = true, CancellationToken ct = default)
+    /// <summary>
+    /// Lädt die vollständige Nachricht; markiert sie beim Öffnen als gelesen (<c>UID STORE +FLAGS (\Seen)</c>).
+    /// Mit <see cref="Cache"/>: bereits gespeicherte Nachrichten kommen aus dem Cache (offline lesbar), neue werden gespeichert.
+    /// </summary>
+    public async Task<MessageDetail> FetchMessageAsync(Account account, string folderPath, uint uid, bool markSeen = true, CancellationToken ct = default)
+    {
+        var cached = Cache?.TryLoadMessage(account.Id, folderPath, uid);
+        if (cached is not null)
+        {
+            if (markSeen)
+            {
+                try { await SetSeenAsync(account, folderPath, uid, true, ct).ConfigureAwait(false); }
+                catch (MailServiceException) { /* offline: Markierung folgt nicht */ }
+            }
+            return ToDetail(account.Id, folderPath, uid, cached);
+        }
+        var message = await FetchMimeAsync(account, folderPath, uid, markSeen, ct).ConfigureAwait(false);
+        try { Cache?.SaveMessage(account.Id, folderPath, uid, message); }
+        catch (IOException) { }
+        return ToDetail(account.Id, folderPath, uid, message);
+    }
+
+    /// <summary>Lädt die Rohnachricht vom Server.</summary>
+    public Task<MimeMessage> FetchMimeAsync(Account account, string folderPath, uint uid, bool markSeen = false, CancellationToken ct = default)
     {
         var session = Session(account);
         return session.RunAsync(async (client, token) =>
@@ -278,7 +339,31 @@ public sealed class MailService : IAsyncDisposable
             var message = await folder.GetMessageAsync(id, token).ConfigureAwait(false);
             if (markSeen && folder.Access == FolderAccess.ReadWrite)
                 await folder.AddFlagsAsync(id, MessageFlags.Seen, true, token).ConfigureAwait(false);
-            return ToDetail(account.Id, folder.FullName, uid, message);
+            return message;
+        }, ct);
+    }
+
+    /// <summary>
+    /// §4 Serversuche im Ordner: Gmail <c>X-GM-RAW</c>, sonst <c>OR OR FROM SUBJECT BODY</c>; höchstens 50 (neueste) Treffer.
+    /// </summary>
+    public Task<IReadOnlyList<MessageSummary>> SearchAsync(Account account, string folderPath, string text, CancellationToken ct = default)
+    {
+        var session = Session(account);
+        var gmail = session.Provider.UsesGmailCategories;
+        return session.RunAsync<IReadOnlyList<MessageSummary>>(async (client, token) =>
+        {
+            if (string.IsNullOrWhiteSpace(text)) return Array.Empty<MessageSummary>();
+            var folder = await GetFolderAsync(client, folderPath, token).ConfigureAwait(false);
+            await OpenAsync(folder, token).ConfigureAwait(false);
+            var uids = await folder.SearchAsync(ServerSearch.BuildQuery(text, gmail), token).ConfigureAwait(false);
+            var newest = uids.OrderByDescending(u => u.Id).Take(ServerSearch.MaxResultsPerAccount).ToList();
+            if (newest.Count == 0) return Array.Empty<MessageSummary>();
+            var items = MessageSummaryItems.UniqueId | MessageSummaryItems.Flags | MessageSummaryItems.InternalDate
+                        | MessageSummaryItems.Size | MessageSummaryItems.Envelope;
+            if (_options.FetchPreviews) items |= MessageSummaryItems.PreviewText;
+            var request = new FetchRequest(items) { Headers = new HeaderSet(ClassifierHeaders) };
+            var summaries = await folder.FetchAsync(newest, request, token).ConfigureAwait(false);
+            return summaries.Select(s => ToModel(account.Id, folder.FullName, s)).OrderByDescending(m => m.Date).ToList();
         }, ct);
     }
 
@@ -345,6 +430,8 @@ public sealed class MailService : IAsyncDisposable
             TextBody = message.TextBody,
             Attachments = attachments,
             InlineResources = inline,
+            ListUnsubscribe = message.Headers["List-Unsubscribe"],
+            ListUnsubscribePost = message.Headers["List-Unsubscribe-Post"],
         };
     }
 
@@ -464,8 +551,49 @@ public sealed class MailService : IAsyncDisposable
         message.MessageId = MimeUtils.GenerateMessageId(string.IsNullOrEmpty(domain) ? "lumail.local" : domain);
         if (!string.IsNullOrEmpty(outgoing.InReplyTo)) message.InReplyTo = outgoing.InReplyTo;
         foreach (var reference in outgoing.References.Where(r => !string.IsNullOrWhiteSpace(r))) message.References.Add(reference);
-        message.Body = new TextPart("plain") { Text = outgoing.Body ?? "" };
+        var text = new TextPart("plain") { Text = outgoing.Body ?? "" };
+        if (outgoing.Attachments.Count == 0)
+        {
+            message.Body = text;
+            return message;
+        }
+        // multipart/mixed: Text als erster Teil, Anhänge Base64 mit filename*=UTF-8''…
+        var mixed = new Multipart("mixed") { text };
+        foreach (var a in outgoing.Attachments) mixed.Add(CreateAttachmentPart(a));
+        message.Body = mixed;
         return message;
+    }
+
+    internal static MimePart CreateAttachmentPart(AttachmentInfo attachment)
+    {
+        var contentType = ContentType.TryParse(attachment.ContentType, out var parsed) && parsed is not null
+            ? parsed
+            : new ContentType("application", "octet-stream");
+        var part = new MimePart(contentType)
+        {
+            Content = new MimeContent(new MemoryStream(attachment.Content)),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+        };
+        var name = string.IsNullOrWhiteSpace(attachment.FileName) ? "Anhang" : attachment.FileName;
+        part.ContentDisposition.FileName = name;
+        // Immer RFC 2231/5987 in UTF-8 (MimeKit würde sonst ASCII-Namen unkodiert bzw. Latin-1 schreiben).
+        var header = part.Headers[part.Headers.IndexOf(HeaderId.ContentDisposition)];
+        header.SetRawValue(System.Text.Encoding.ASCII.GetBytes(" attachment; filename*=UTF-8''" + Rfc5987Encode(name) + "\r\n"));
+        return part;
+    }
+
+    /// <summary>Prozentkodierung nach RFC 5987 (attr-char bleibt, alles andere UTF-8 %XX).</summary>
+    internal static string Rfc5987Encode(string value)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var b in System.Text.Encoding.UTF8.GetBytes(value))
+        {
+            var c = (char)b;
+            if (char.IsAsciiLetterOrDigit(c) || "!#$&+-.^_`|~".Contains(c)) sb.Append(c);
+            else sb.Append('%').Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return sb.ToString();
     }
 
     private static void AddAddresses(InternetAddressList target, string? list, string field)
@@ -481,10 +609,13 @@ public sealed class MailService : IAsyncDisposable
     /// Sendet per SMTP (gleiche Authentifizierung wie IMAP). Bei <c>saveSentViaImap</c> wird die Nachricht danach
     /// per IMAP APPEND (\Seen) im Ordner mit Rolle "sent" abgelegt.
     /// </summary>
-    public async Task SendAsync(Account account, OutgoingMessage outgoing, CancellationToken ct = default)
+    public Task SendAsync(Account account, OutgoingMessage outgoing, CancellationToken ct = default) =>
+        SendMimeAsync(account, BuildMimeMessage(account, outgoing), ct);
+
+    /// <summary>Sendet eine fertige MIME-Nachricht (z. B. aus outbox/).</summary>
+    public async Task SendMimeAsync(Account account, MimeMessage message, CancellationToken ct = default)
     {
         var provider = _providers.Get(account.ProviderId);
-        var message = BuildMimeMessage(account, outgoing);
         try
         {
             for (var attempt = 0; ; attempt++)
@@ -492,7 +623,7 @@ public sealed class MailService : IAsyncDisposable
                 var credential = await _credentials.GetCredentialAsync(account, provider, attempt > 0, ct).ConfigureAwait(false);
                 try
                 {
-                    using var smtp = await MailConnector.ConnectSmtpAsync(provider, credential, _options.Timeout, ct).ConfigureAwait(false);
+                    using var smtp = await MailConnector.ConnectSmtpAsync(provider, account.SmtpFor(provider), credential, _options.Timeout, ct).ConfigureAwait(false);
                     await smtp.SendAsync(message, ct).ConfigureAwait(false);
                     await smtp.DisconnectAsync(true, ct).ConfigureAwait(false);
                     break;
@@ -528,11 +659,16 @@ public sealed class MailService : IAsyncDisposable
     // -------------------------------------------------------- Zugangsprüfung
 
     /// <summary>Testet Zugangsdaten per IMAP-LOGIN. Liefert null bei Erfolg, sonst eine deutsche Fehlermeldung.</summary>
-    public async Task<string?> VerifyPasswordAsync(Provider provider, string email, string password, CancellationToken ct = default)
+    public async Task<string?> VerifyPasswordAsync(Provider provider, string email, string password, CancellationToken ct = default) =>
+        await VerifyPasswordAsync(provider, email, password, null, ct).ConfigureAwait(false);
+
+    /// <summary>Wie oben, mit eigenen Servern (Anbieter „Andere (IMAP)“).</summary>
+    public async Task<string?> VerifyPasswordAsync(Provider provider, string email, string password, CustomServerSettings? servers, CancellationToken ct = default)
     {
+        var endpoint = provider.CustomServers && servers is not null ? servers.Imap : provider.Imap;
         try
         {
-            using var client = await MailConnector.ConnectImapAsync(provider, new MailCredential(email, password, false), _options.Timeout, ct)
+            using var client = await MailConnector.ConnectImapAsync(provider, endpoint, new MailCredential(email, password, false), _options.Timeout, ct)
                 .ConfigureAwait(false);
             await client.DisconnectAsync(true, ct).ConfigureAwait(false);
             return null;
@@ -646,7 +782,7 @@ internal sealed class AccountSession : IAsyncDisposable
         if (_client is { IsConnected: true, IsAuthenticated: true }) return _client;
         ResetClient();
         var credential = await _credentials.GetCredentialAsync(Account, Provider, forceRefresh, ct).ConfigureAwait(false);
-        _client = await MailConnector.ConnectImapAsync(Provider, credential, _options.Timeout, ct).ConfigureAwait(false);
+        _client = await MailConnector.ConnectImapAsync(Provider, Account.ImapFor(Provider), credential, _options.Timeout, ct).ConfigureAwait(false);
         return _client;
     }
 

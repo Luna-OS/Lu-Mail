@@ -30,6 +30,9 @@ public sealed class Provider
     /// <summary>Nach dem SMTP-Versand eine Kopie per IMAP APPEND im Ordner mit Rolle "sent" ablegen.</summary>
     public bool SaveSentViaImap { get; set; }
 
+    /// <summary>„Andere (IMAP)“: Server werden pro Konto gewählt (<see cref="Account.CustomServers"/>).</summary>
+    public bool CustomServers { get; set; }
+
     [JsonIgnore]
     public bool SupportsOAuth =>
         OAuth is not null && AuthMethods.Contains(Account.AuthOAuth2, StringComparer.OrdinalIgnoreCase);

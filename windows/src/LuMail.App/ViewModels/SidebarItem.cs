@@ -23,6 +23,12 @@ public enum SidebarTarget
     AllInboxes,
     Unread,
     Flagged,
+    /// <summary>Später erinnern: alle zurückgestellten Nachrichten.</summary>
+    Reminders,
+    /// <summary>Später senden: geplante Nachrichten (outbox/).</summary>
+    Scheduled,
+    /// <summary>„Alle &lt;Anbieter&gt;-Posteingänge“ (Anbieter mit mehreren Konten).</summary>
+    ProviderInbox,
     /// <summary>Kategorie (virtueller INBOX-Unterordner) oder – ohne Kategorientrennung – ganzer Posteingang.</summary>
     Category,
     /// <summary>Server-Ordner.</summary>
@@ -40,7 +46,7 @@ public sealed class SidebarItem : ObservableObject
     public Account? Account { get; init; }
     public Provider? Provider { get; init; }
     /// <summary>Bei <see cref="SidebarTarget.Category"/>: Kategorie; null = ganzer Posteingang.</summary>
-    public MessageCategory? Category { get; init; }
+    public string? CategoryId { get; init; }
     public string? FolderPath { get; init; }
     public FolderRole Role { get; init; }
     public SolidColorBrush? DotBrush { get; init; }
@@ -49,7 +55,10 @@ public sealed class SidebarItem : ObservableObject
     /// <summary>Stabiler Schlüssel, um die Auswahl nach einem Neuaufbau wiederherzustellen.</summary>
     public string Key { get; init; } = "";
 
-    public bool IsSelectable => Kind == SidebarItemKind.Folder;
+    public bool IsSelectable => Kind == SidebarItemKind.Folder || Target == SidebarTarget.ProviderInbox;
+
+    /// <summary>Überschrift der Nachrichtenliste.</summary>
+    public string ListTitle { get; init; } = "";
 
     private int _unread;
     public int Unread

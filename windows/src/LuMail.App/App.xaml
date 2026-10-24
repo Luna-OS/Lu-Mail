@@ -69,6 +69,12 @@
             <SolidColorBrush x:Key="LuProviderProton" Color="#6D4AFF" />
             <SolidColorBrush x:Key="LuProviderMailru" Color="#005FF9" />
             <SolidColorBrush x:Key="LuProviderHostinger" Color="#673DE6" />
+            <SolidColorBrush x:Key="LuProviderOutlook" Color="#0A64D8" />
+            <SolidColorBrush x:Key="LuProviderIcloud" Color="#3693F3" />
+            <SolidColorBrush x:Key="LuProviderGmx" Color="#1C449B" />
+            <SolidColorBrush x:Key="LuProviderWebde" Color="#E5B800" />
+            <SolidColorBrush x:Key="LuProviderYandex" Color="#FC3F1D" />
+            <SolidColorBrush x:Key="LuProviderCustom" Color="#8B7CFF" />
 
             <!-- Kategoriefarben -->
             <SolidColorBrush x:Key="LuCategoryPrimary" Color="#8B7CFF" />

@@ -29,6 +29,13 @@ public static class MessageComposer
         return string.Join("\n", lines.Select(l => l.StartsWith('>') ? ">" + l : "> " + l));
     }
 
+    /// <summary>Signaturblock <c>\n\n-- \n&lt;Signatur&gt;</c> (leer ohne Signatur).</summary>
+    public static string SignatureBlock(string? signature) =>
+        string.IsNullOrWhiteSpace(signature) ? "" : "\n\n-- \n" + signature.Replace("\r\n", "\n").TrimEnd();
+
+    /// <summary>Neue E-Mail: nur die Signatur.</summary>
+    public static OutgoingMessage CreateNew(Account? account) => new() { Body = SignatureBlock(account?.Signature) };
+
     public static string BodyText(MessageDetail message) =>
         !string.IsNullOrWhiteSpace(message.TextBody) ? message.TextBody!.Trim() : HtmlPreparer.HtmlToPlainText(message.HtmlBody);
 
@@ -59,6 +66,7 @@ public static class MessageComposer
 
         var sender = message.From?.ToString() ?? "Unbekannt";
         var body = new StringBuilder()
+            .Append(SignatureBlock(account.Signature))
             .Append("\n\n")
             .Append("Am ").Append(FormatDate(message.Date)).Append(" schrieb ").Append(sender).Append(":\n")
             .Append(Quote(BodyText(message)))
@@ -78,10 +86,11 @@ public static class MessageComposer
         };
     }
 
-    /// <summary>Weiterleitung vorbereiten (Klartext, ohne Anhänge).</summary>
-    public static OutgoingMessage CreateForward(MessageDetail message)
+    /// <summary>Weiterleitung vorbereiten (Klartext, übernimmt die Anhänge).</summary>
+    public static OutgoingMessage CreateForward(MessageDetail message, Account? account = null)
     {
         var body = new StringBuilder()
+            .Append(SignatureBlock(account?.Signature))
             .Append("\n\n---------- Weitergeleitete Nachricht ----------\n")
             .Append("Von: ").Append(message.From?.ToString() ?? "").Append('\n')
             .Append("Datum: ").Append(FormatDate(message.Date)).Append('\n')
@@ -94,6 +103,7 @@ public static class MessageComposer
         {
             Subject = ForwardSubject(message.Subject),
             Body = body.ToString(),
+            Attachments = message.Attachments.ToList(),
         };
     }
 

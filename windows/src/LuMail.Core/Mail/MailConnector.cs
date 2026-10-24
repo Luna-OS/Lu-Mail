@@ -36,14 +36,15 @@ public static class MailConnector
     public static bool ValidateCertificate(Provider provider, string host, SslPolicyErrors errors) =>
         errors == SslPolicyErrors.None || (provider.AllowInsecureLoopbackCertificate && IsLoopbackHost(host));
 
-    public static async Task<ImapClient> ConnectImapAsync(Provider provider, MailCredential credential, TimeSpan timeout, CancellationToken ct)
+    public static async Task<ImapClient> ConnectImapAsync(Provider provider, ServerEndpoint endpoint, MailCredential credential, TimeSpan timeout, CancellationToken ct)
     {
         var client = new ImapClient { Timeout = (int)timeout.TotalMilliseconds };
-        var host = provider.Imap.Host;
+        var host = endpoint.Host;
+        if (string.IsNullOrWhiteSpace(host)) throw new MailServiceException("Für dieses Konto ist kein IMAP-Server eingetragen.");
         client.ServerCertificateValidationCallback = (_, _, _, errors) => ValidateCertificate(provider, host, errors);
         try
         {
-            await client.ConnectAsync(host, provider.Imap.Port, ToSocketOptions(provider.Imap.Security), ct).ConfigureAwait(false);
+            await client.ConnectAsync(host, endpoint.Port, ToSocketOptions(endpoint.Security), ct).ConfigureAwait(false);
             await AuthenticateAsync(client, credential, ct).ConfigureAwait(false);
             return client;
         }
@@ -54,14 +55,15 @@ public static class MailConnector
         }
     }
 
-    public static async Task<SmtpClient> ConnectSmtpAsync(Provider provider, MailCredential credential, TimeSpan timeout, CancellationToken ct)
+    public static async Task<SmtpClient> ConnectSmtpAsync(Provider provider, ServerEndpoint endpoint, MailCredential credential, TimeSpan timeout, CancellationToken ct)
     {
         var client = new SmtpClient { Timeout = (int)timeout.TotalMilliseconds };
-        var host = provider.Smtp.Host;
+        var host = endpoint.Host;
+        if (string.IsNullOrWhiteSpace(host)) throw new MailServiceException("Für dieses Konto ist kein SMTP-Server eingetragen.");
         client.ServerCertificateValidationCallback = (_, _, _, errors) => ValidateCertificate(provider, host, errors);
         try
         {
-            await client.ConnectAsync(host, provider.Smtp.Port, ToSocketOptions(provider.Smtp.Security), ct).ConfigureAwait(false);
+            await client.ConnectAsync(host, endpoint.Port, ToSocketOptions(endpoint.Security), ct).ConfigureAwait(false);
             await AuthenticateAsync(client, credential, ct).ConfigureAwait(false);
             return client;
         }
