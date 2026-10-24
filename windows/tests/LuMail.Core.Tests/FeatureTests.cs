@@ -255,11 +255,25 @@ public class SelectionLogicTests
     [Fact]
     public async Task Debouncer_FiresOnceAfterQuietPeriod()
     {
+        // Ohne kurze Task.Delay-Abstände: auf ausgelasteten CI-Runnern können die länger als die Wartezeit dauern.
         var count = 0;
-        using var d = new Debouncer(TimeSpan.FromMilliseconds(150), () => Interlocked.Increment(ref count));
-        for (var i = 0; i < 5; i++) { d.Trigger(); await Task.Delay(30); }
-        await Task.Delay(400);
-        Assert.Equal(1, count);
+        using var d = new Debouncer(TimeSpan.FromMilliseconds(200), () => Interlocked.Increment(ref count));
+        for (var i = 0; i < 5; i++) d.Trigger();
+        await WaitUntil(() => Volatile.Read(ref count) >= 1, TimeSpan.FromSeconds(5));
+        await Task.Delay(600);
+        Assert.Equal(1, Volatile.Read(ref count));
+
+        // Nach der Ruhephase löst ein neuer Trigger wieder genau einmal aus.
+        d.Trigger();
+        await WaitUntil(() => Volatile.Read(ref count) >= 2, TimeSpan.FromSeconds(5));
+        await Task.Delay(600);
+        Assert.Equal(2, Volatile.Read(ref count));
+    }
+
+    private static async Task WaitUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline) await Task.Delay(20);
     }
 }
 
