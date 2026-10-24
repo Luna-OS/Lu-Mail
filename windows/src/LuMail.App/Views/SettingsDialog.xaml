@@ -11,45 +11,151 @@
     DefaultButton="Close"
     Style="{StaticResource DefaultContentDialogStyle}">
 
-    <ScrollViewer MinWidth="440" MaxWidth="460" VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="16">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Automatisch aktualisieren" />
-                <ComboBox x:Name="IntervalBox" MinWidth="200" SelectionChanged="OnIntervalChanged" />
-            </StackPanel>
+    <ContentDialog.Resources>
+        <x:Double x:Key="ContentDialogMaxWidth">820</x:Double>
+        <x:Double x:Key="ContentDialogMaxHeight">900</x:Double>
+    </ContentDialog.Resources>
 
-            <ToggleSwitch x:Name="CategoriesSwitch" Header="Kategorien im Posteingang trennen"
-                          OffContent="Aus" OnContent="An" Toggled="OnCategoriesToggled" />
+    <Pivot x:Name="SettingsPivot" Width="640" Height="560">
+        <!-- ===== Allgemein ===== -->
+        <PivotItem Header="Allgemein">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Padding="0,8,12,8" Spacing="16">
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Automatisch abrufen" />
+                        <ComboBox x:Name="IntervalBox" MinWidth="220" SelectionChanged="OnIntervalChanged" />
+                        <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                                   Text="Konten mit IMAP IDLE melden neue Nachrichten zusätzlich sofort (Push)." />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="NotificationsSwitch" Header="Mitteilungen" OffContent="Aus" OnContent="An" Toggled="OnNotificationsToggled" />
+                    <ToggleSwitch x:Name="CategoriesSwitch" Header="Kategorien im Posteingang trennen" OffContent="Aus" OnContent="An" Toggled="OnCategoriesToggled" />
+                    <StackPanel Spacing="6">
+                        <ToggleSwitch x:Name="CacheSwitch" Header="Offline-Cache" OffContent="Aus" OnContent="An" Toggled="OnCacheToggled" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Click="OnClearCacheClick" Content="Cache leeren" />
+                            <TextBlock x:Name="CacheSizeText" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Spacing="8">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Automatisch aufräumen" />
+                        <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                                   Text="Ältere, nicht markierte Nachrichten dieser Kategorien werden archiviert (ohne Archiv: Papierkorb)." />
+                        <StackPanel x:Name="CleanupPanel" Spacing="6" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Datenordner" />
+                        <TextBlock x:Name="DataFolderText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                        <HyperlinkButton Click="OnOpenDataFolderClick" Content="Ordner öffnen (oauth.json, accounts.json, rules.json)" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
 
-            <StackPanel Spacing="4">
-                <ToggleSwitch x:Name="ExternalSwitch" Header="Externe Bilder immer laden"
-                              OffContent="Aus (empfohlen)" OnContent="An" Toggled="OnExternalToggled" />
-                <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
-                           Text="Externe Bilder können verraten, wann und wo du eine E-Mail geöffnet hast (Tracking-Pixel)." />
-            </StackPanel>
+        <!-- ===== Konten ===== -->
+        <PivotItem Header="Konten">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Padding="0,8,12,8" Spacing="12">
+                    <TextBlock x:Name="NoAccountsText" Foreground="{ThemeResource LuTextSecondary}" Text="Noch keine Konten eingerichtet." Visibility="Collapsed" />
+                    <StackPanel x:Name="AccountsPanel" Spacing="14" />
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
 
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Updates" />
+        <!-- ===== Regeln ===== -->
+        <PivotItem Header="Regeln">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Padding="0,8,12,8" Spacing="16">
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Absender" />
+                        <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                                   Text="„Absender immer als … einsortieren“ gewinnt vor allen anderen Regeln." />
+                        <StackPanel x:Name="SendersPanel" Spacing="4" />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Regeln (erste passende gewinnt)" />
+                        <StackPanel x:Name="RulesPanel" Spacing="4" />
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="RuleFieldBox" MinWidth="120" />
+                            <TextBox x:Name="RuleContainsBox" Grid.Column="1" PlaceholderText="enthält …" />
+                            <ComboBox x:Name="RuleCategoryBox" Grid.Column="2" MinWidth="150" />
+                            <Button Grid.Column="3" Click="OnAddRuleClick" Content="Hinzufügen" />
+                        </Grid>
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Eigene Kategorien" />
+                        <StackPanel x:Name="CustomCategoriesPanel" Spacing="4" />
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="CategoryNameBox" PlaceholderText="Name, z. B. Rechnungen" />
+                            <ComboBox x:Name="CategoryColorBox" Grid.Column="1" MinWidth="130" />
+                            <Button Grid.Column="2" Click="OnAddCategoryClick" Content="Anlegen" />
+                        </Grid>
+                        <TextBlock x:Name="RulesStatusText" FontSize="12" Foreground="{ThemeResource LuDanger}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
+
+        <!-- ===== Darstellung ===== -->
+        <PivotItem Header="Darstellung">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Padding="0,8,12,8" Spacing="16">
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Modus" />
+                        <ComboBox x:Name="ModeBox" MinWidth="220" SelectionChanged="OnAppearanceChanged" />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Variante" />
+                        <ComboBox x:Name="VariantBox" MinWidth="220" SelectionChanged="OnAppearanceChanged" />
+                        <TextBlock x:Name="VariantDescription" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Akzentfarbe" />
+                        <ComboBox x:Name="AccentBox" MinWidth="220" SelectionChanged="OnAppearanceChanged" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
+
+        <!-- ===== Datenschutz ===== -->
+        <PivotItem Header="Datenschutz">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Padding="0,8,12,8" Spacing="16">
+                    <StackPanel Spacing="4">
+                        <ToggleSwitch x:Name="ExternalSwitch" Header="Externe Bilder immer laden" OffContent="Aus (empfohlen)" OnContent="An" Toggled="OnExternalToggled" />
+                        <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                                   Text="Externe Bilder können verraten, wann und wo du eine E-Mail geöffnet hast (Tracking-Pixel)." />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <ToggleSwitch x:Name="LockSwitch" Header="Lu-Mail sperren mit Windows Hello" OffContent="Aus" OnContent="An" Toggled="OnLockToggled" />
+                        <ComboBox x:Name="LockMinutesBox" MinWidth="260" SelectionChanged="OnLockMinutesChanged" />
+                        <TextBlock x:Name="LockHintText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
+
+        <!-- ===== Updates ===== -->
+        <PivotItem Header="Updates">
+            <StackPanel Padding="0,8,12,8" Spacing="8">
                 <TextBlock x:Name="VersionText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
-                <ComboBox x:Name="UpdateModeBox" MinWidth="200" SelectionChanged="OnUpdateModeChanged" />
+                <ComboBox x:Name="UpdateModeBox" MinWidth="220" SelectionChanged="OnUpdateModeChanged" />
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <Button x:Name="CheckUpdatesButton" Click="OnCheckUpdatesClick" Content="Jetzt nach Updates suchen" />
                     <ProgressRing x:Name="CheckUpdatesRing" Width="20" Height="20" IsActive="False" />
                 </StackPanel>
                 <TextBlock x:Name="UpdateStatusText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap" />
             </StackPanel>
-
-            <StackPanel Spacing="8">
-                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Konten" />
-                <TextBlock x:Name="NoAccountsText" Foreground="{ThemeResource LuTextSecondary}" Text="Noch keine Konten eingerichtet." Visibility="Collapsed" />
-                <StackPanel x:Name="AccountsPanel" Spacing="6" />
-            </StackPanel>
-
-            <StackPanel Spacing="4">
-                <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Datenordner" />
-                <TextBlock x:Name="DataFolderText" FontSize="12" Foreground="{ThemeResource LuTextSecondary}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
-                <HyperlinkButton Click="OnOpenDataFolderClick" Content="Ordner öffnen (oauth.json, accounts.json, rules.json)" />
-            </StackPanel>
-        </StackPanel>
-    </ScrollViewer>
+        </PivotItem>
+    </Pivot>
 </ContentDialog>
