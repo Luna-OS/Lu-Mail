@@ -116,14 +116,17 @@ public class ThemeTests
 
         Dictionary<string, string> BrushesIn(XElement scope) => scope.Descendants()
             .Where(e => e.Name.LocalName == "SolidColorBrush" && e.Attribute(x + "Key") is not null)
-            .ToDictionary(e => e.Attribute(x + "Key")!.Value, e => e.Attribute("Color")!.Value.ToUpperInvariant());
+            .GroupBy(e => e.Attribute(x + "Key")!.Value)
+            .ToDictionary(g => g.Key, g => g.First().Attribute("Color")!.Value.ToUpperInvariant());
 
-        XElement ThemeDictionary(string key) => xaml.Descendants()
-            .Single(e => e.Name.LocalName == "ResourceDictionary" && (string?)e.Attribute(x + "Key") == key);
+        // Dunkles Theme liegt unter "Default" (Fallback auch für Kontrastdesigns) oder "Dark".
+        XElement ThemeDictionary(params string[] keys) => xaml.Descendants()
+            .First(e => e.Name.LocalName == "ResourceDictionary" && keys.Contains((string?)e.Attribute(x + "Key")));
 
-        foreach (var (themeKey, tokens) in new[] { ("Dark", theme.Dark), ("Light", theme.Light) })
+        foreach (var (themeKeys, tokens) in new[] { (new[] { "Dark", "Default" }, theme.Dark), (new[] { "Light" }, theme.Light) })
         {
-            var brushes = BrushesIn(ThemeDictionary(themeKey));
+            var themeKey = themeKeys[0];
+            var brushes = BrushesIn(ThemeDictionary(themeKeys));
             foreach (var (token, hex) in tokens)
             {
                 var key = ThemeCatalog.ResourceKey(token);
