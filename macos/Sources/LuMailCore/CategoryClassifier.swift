@@ -55,18 +55,18 @@ public struct CategoryClassifier: Sendable {
     ///   - subject: Betreff
     ///   - headers: Header-Namen → Werte; Namen werden ohne Groß-/Kleinschreibung verglichen.
     ///   - serverCategory: Gmail-Kategorie vom Server, falls vorhanden.
-    ///   - overrides: Nutzer-Regeln (Absender-Adresse oder Domain, klein geschrieben → Kategorie).
-    public func classify(from: MailAddress?, subject: String, headers: [String: String],
-                         serverCategory: MailCategory? = nil, overrides: [String: MailCategory] = [:]) -> MailCategory {
-        let address = from?.address.lowercased() ?? ""
+    ///   - to: Empfänger (für eigene Regeln auf „Empfänger“)
+    ///   - rules: Nutzer-Regeln aus rules.json (Absender und eigene Regeln).
+    public func classify(from: MailAddress?, to: [MailAddress] = [], subject: String, headers: [String: String],
+                         serverCategory: MailCategory? = nil, rules userRules: RuleSet = RuleSet()) -> MailCategory {
         let domain = from?.domain ?? ""
         let localPart = from?.localPart ?? ""
         let lowerSubject = subject.lowercased()
         var lowerHeaders: [String: String] = [:]
         for (key, value) in headers { lowerHeaders[key.lowercased()] = value }
 
-        // 1. Nutzer-Regel
-        if let rule = overrides[address] ?? (domain.isEmpty ? nil : overrides[domain]) {
+        // 1. Nutzer-Regeln: Absender, dann eigene Regeln
+        if let rule = userRules.category(from: from, to: to, subject: subject) {
             return rule
         }
         // 2. Gmail-Server-Kategorie

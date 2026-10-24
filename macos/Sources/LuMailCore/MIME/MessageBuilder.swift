@@ -10,9 +10,10 @@ public struct OutgoingMessage: Sendable {
     public var body: String
     public var inReplyTo: String?
     public var references: String?
+    public var attachments: [OutgoingAttachment]
 
     public init(from: MailAddress, to: [MailAddress], cc: [MailAddress] = [], bcc: [MailAddress] = [], subject: String,
-                body: String, inReplyTo: String? = nil, references: String? = nil) {
+                body: String, inReplyTo: String? = nil, references: String? = nil, attachments: [OutgoingAttachment] = []) {
         self.from = from
         self.to = to
         self.cc = cc
@@ -21,9 +22,28 @@ public struct OutgoingMessage: Sendable {
         self.body = body
         self.inReplyTo = inReplyTo
         self.references = references
+        self.attachments = attachments
     }
 
     public var allRecipients: [MailAddress] { to + cc + bcc }
+    public var attachmentBytes: Int { attachments.reduce(0) { $0 + $1.data.count } }
+}
+
+/// Ein Anhang zum Senden.
+public struct OutgoingAttachment: Sendable, Hashable, Identifiable {
+    public var id = UUID()
+    public var filename: String
+    public var mimeType: String
+    public var data: Data
+
+    public init(filename: String, mimeType: String, data: Data) {
+        self.filename = filename
+        self.mimeType = mimeType
+        self.data = data
+    }
+
+    /// Ab dieser Gesamtgröße warnt Lu-Mail (viele Anbieter lehnen > 25 MB ab).
+    public static let warningBytes = 20 * 1024 * 1024
 }
 
 /// Erzeugt eine RFC-5322-Nachricht (UTF-8, Base64-Text). Bcc wird bewusst nicht in die Header geschrieben.
@@ -41,13 +61,63 @@ public enum MessageBuilder {
         if let references = message.references { lines.append("References: \(references)") }
         lines.append("MIME-Version: 1.0")
         lines.append("User-Agent: Lu-Mail")
+
+        let normalized = message.body.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
+        let textPart = base64Lines(Data(normalized.utf8))
+        guard !message.attachments.isEmpty else {
+            lines.append("Content-Type: text/plain; charset=utf-8")
+            lines.append("Content-Transfer-Encoding: base64")
+            lines.append("")
+            return Data((lines.joined(separator: "\r\n") + "\r\n" + textPart + "\r\n").utf8)
+        }
+
+        let boundary = "lumail-\(UUID().uuidString.lowercased())"
+        lines.append("Content-Type: multipart/mixed; boundary=\"\(boundary)\"")
+        lines.append("")
+        lines.append("--\(boundary)")
         lines.append("Content-Type: text/plain; charset=utf-8")
         lines.append("Content-Transfer-Encoding: base64")
         lines.append("")
+        lines.append(textPart)
+        for attachment in message.attachments {
+            let name = encodedFilename(attachment.filename)
+            lines.append("--\(boundary)")
+            lines.append("Content-Type: \(attachment.mimeType); name=\"\(asciiFallback(attachment.filename))\"")
+            lines.append("Content-Disposition: attachment; \(name)")
+            lines.append("Content-Transfer-Encoding: base64")
+            lines.append("")
+            lines.append(base64Lines(attachment.data))
+        }
+        lines.append("--\(boundary)--")
+        lines.append("")
+        return Data(lines.joined(separator: "\r\n").utf8)
+    }
 
-        let normalized = message.body.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
-        let base64 = Data(normalized.utf8).base64EncodedString(options: [.lineLength76Characters, .endLineWithCarriageReturn, .endLineWithLineFeed])
-        return Data((lines.joined(separator: "\r\n") + "\r\n" + base64 + "\r\n").utf8)
+    static func base64Lines(_ data: Data) -> String {
+        data.base64EncodedString(options: [.lineLength76Characters, .endLineWithCarriageReturn, .endLineWithLineFeed])
+    }
+
+    /// RFC 2231: `filename*=UTF-8''Rechnung%20M%C3%A4rz.pdf` (plus ASCII-Variante für alte Programme).
+    static func encodedFilename(_ name: String) -> String {
+        let fallback = asciiFallback(name)
+        guard name.unicodeScalars.contains(where: { $0.value > 0x7E }) || name.contains("\"") else {
+            return "filename=\"\(fallback)\""
+        }
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: allowed) ?? fallback
+        return "filename=\"\(fallback)\"; filename*=UTF-8''\(encoded)"
+    }
+
+    static func asciiFallback(_ name: String) -> String {
+        let folded = name.folding(options: .diacriticInsensitive, locale: Locale(identifier: "de"))
+        return String(folded.unicodeScalars.map { $0.value >= 0x20 && $0.value <= 0x7E && $0 != "\"" && $0 != "\\" ? Character($0) : "_" })
+    }
+
+    /// Hängt die Signatur an („-- “ ist der Standard-Trenner, RFC 3676).
+    public static func bodyWithSignature(_ body: String, signature: String?) -> String {
+        guard let signature = signature?.trimmingCharacters(in: .whitespacesAndNewlines), !signature.isEmpty else { return body }
+        return "\n\n-- \n\(signature)" + body
     }
 
     /// „Re: “ bzw. „Fwd: “ voranstellen, ohne sie zu verdoppeln.

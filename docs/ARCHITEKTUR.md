@@ -57,7 +57,7 @@ bei Gmail gewinnt `\All` nur für „archive“, wenn kein `\Archive` existiert.
 Die Kategorien sind virtuelle Unterordner von INBOX.
 
 1. Lu-Mail lädt die neuesten **200** Nachrichten-Header aus INBOX
-   (`UID FETCH … (UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE LIST-ID LIST-POST PRECEDENCE)])`).
+   (`UID FETCH … (UID FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODY.PEEK[HEADER.FIELDS (LIST-UNSUBSCRIBE LIST-UNSUBSCRIBE-POST LIST-ID LIST-POST PRECEDENCE REFERENCES)])`).
 2. **Gmail** (`serverCategories = "gmail"`): für promotions, social, updates, forums je
    `UID SEARCH UID <min>:<max> X-GM-RAW "<gmailQuery>"`. Treffer bekommen die Kategorie, Rest = primary.
 3. **Alle anderen**: lokaler Klassifizierer nach `categories.json → algorithm` (identisch in Swift und C#).

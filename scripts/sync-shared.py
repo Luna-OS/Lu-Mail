@@ -20,6 +20,9 @@ FILES = {
     "doneHTML": "shared/login/done.html",
     "oauthExampleJSON": "shared/oauth.example.json",
     "updateJSON": "shared/update.json",
+    "trackersJSON": "shared/trackers.json",
+    "phishingJSON": "shared/phishing.json",
+    "customServersHTML": "shared/login/custom-servers.html",
 }
 
 

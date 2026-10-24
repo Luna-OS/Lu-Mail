@@ -44,7 +44,13 @@
     "gmail": "#EA4335",
     "proton": "#6D4AFF",
     "mailru": "#005FF9",
-    "hostinger": "#673DE6"
+    "hostinger": "#673DE6",
+    "outlook": "#0A64D8",
+    "icloud": "#3693F3",
+    "gmx": "#1C449B",
+    "webde": "#E5B800",
+    "yandex": "#FC3F1D",
+    "custom": "#8B7CFF"
   },
   "categories": {
     "primary": "#8B7CFF",
@@ -72,5 +78,165 @@
     "sizeBody": 13,
     "sizeSubtitle": 15,
     "sizeTitle": 20
+  },
+  "variants": {
+    "luna": {
+      "name": "Luna",
+      "description": "Nachtblau mit Lila – das Original",
+      "colors": {
+        "dark": {
+          "background": "#0F1020",
+          "sidebar": "#131430",
+          "surface": "#1A1C3A",
+          "surfaceHover": "#232547",
+          "surfaceSelected": "#2D2A5C",
+          "border": "#2A2C4F",
+          "textPrimary": "#ECEBFF",
+          "textSecondary": "#A6A3C9",
+          "textMuted": "#6F6C99",
+          "accent": "#8B7CFF",
+          "accentHover": "#A094FF",
+          "accentText": "#0F1020",
+          "moon": "#F5D06F",
+          "unreadDot": "#8B7CFF",
+          "danger": "#FF6B81",
+          "success": "#4ADE80"
+        },
+        "light": {
+          "background": "#F7F6FF",
+          "sidebar": "#EEECFB",
+          "surface": "#FFFFFF",
+          "surfaceHover": "#F1EFFE",
+          "surfaceSelected": "#E3DFFD",
+          "border": "#DDDAF2",
+          "textPrimary": "#1B1A33",
+          "textSecondary": "#5E5B80",
+          "textMuted": "#9491B5",
+          "accent": "#6B5BEF",
+          "accentHover": "#5A49E0",
+          "accentText": "#FFFFFF",
+          "moon": "#C99A1E",
+          "unreadDot": "#6B5BEF",
+          "danger": "#E11D48",
+          "success": "#16A34A"
+        }
+      }
+    },
+    "neumond": {
+      "name": "Neumond",
+      "description": "Tiefschwarz, ideal für OLED-Bildschirme",
+      "colors": {
+        "dark": {
+          "background": "#000000",
+          "sidebar": "#05050C",
+          "surface": "#0B0B16",
+          "surfaceHover": "#14142A",
+          "surfaceSelected": "#1E1B42",
+          "border": "#1C1C33",
+          "textPrimary": "#ECEBFF",
+          "textSecondary": "#A6A3C9",
+          "textMuted": "#6F6C99",
+          "accent": "#8B7CFF",
+          "accentHover": "#A094FF",
+          "accentText": "#0F1020",
+          "moon": "#F5D06F",
+          "unreadDot": "#8B7CFF",
+          "danger": "#FF6B81",
+          "success": "#4ADE80"
+        },
+        "light": {
+          "background": "#F7F6FF",
+          "sidebar": "#EEECFB",
+          "surface": "#FFFFFF",
+          "surfaceHover": "#F1EFFE",
+          "surfaceSelected": "#E3DFFD",
+          "border": "#DDDAF2",
+          "textPrimary": "#1B1A33",
+          "textSecondary": "#5E5B80",
+          "textMuted": "#9491B5",
+          "accent": "#6B5BEF",
+          "accentHover": "#5A49E0",
+          "accentText": "#FFFFFF",
+          "moon": "#C99A1E",
+          "unreadDot": "#6B5BEF",
+          "danger": "#E11D48",
+          "success": "#16A34A"
+        }
+      }
+    },
+    "vollmond": {
+      "name": "Vollmond",
+      "description": "Warm und hell wie Mondlicht",
+      "colors": {
+        "dark": {
+          "background": "#17140F",
+          "sidebar": "#1D1913",
+          "surface": "#241F17",
+          "surfaceHover": "#2E281E",
+          "surfaceSelected": "#3A3122",
+          "border": "#3A3324",
+          "textPrimary": "#F5EEDC",
+          "textSecondary": "#C2B79E",
+          "textMuted": "#8A8069",
+          "accent": "#8B7CFF",
+          "accentHover": "#A094FF",
+          "accentText": "#0F1020",
+          "moon": "#F5D06F",
+          "unreadDot": "#8B7CFF",
+          "danger": "#FF6B81",
+          "success": "#4ADE80"
+        },
+        "light": {
+          "background": "#FBF8F1",
+          "sidebar": "#F3EEE2",
+          "surface": "#FFFDF8",
+          "surfaceHover": "#F6F0E2",
+          "surfaceSelected": "#EDE3CB",
+          "border": "#E6DCC6",
+          "textPrimary": "#2A2418",
+          "textSecondary": "#6B604B",
+          "textMuted": "#A39A86",
+          "accent": "#6B5BEF",
+          "accentHover": "#5A49E0",
+          "accentText": "#FFFFFF",
+          "moon": "#B8860B",
+          "unreadDot": "#6B5BEF",
+          "danger": "#E11D48",
+          "success": "#16A34A"
+        }
+      }
+    }
+  },
+  "accents": {
+    "lila": {
+      "name": "Lila",
+      "dark": "#8B7CFF",
+      "light": "#6B5BEF"
+    },
+    "blau": {
+      "name": "Blau",
+      "dark": "#60A5FA",
+      "light": "#2563EB"
+    },
+    "tuerkis": {
+      "name": "Türkis",
+      "dark": "#2DD4BF",
+      "light": "#0D9488"
+    },
+    "gruen": {
+      "name": "Grün",
+      "dark": "#4ADE80",
+      "light": "#16A34A"
+    },
+    "rosa": {
+      "name": "Rosa",
+      "dark": "#F472B6",
+      "light": "#DB2777"
+    },
+    "gold": {
+      "name": "Gold",
+      "dark": "#F5D06F",
+      "light": "#B7791F"
+    }
   }
 }

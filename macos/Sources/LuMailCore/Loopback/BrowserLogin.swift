@@ -80,8 +80,21 @@ public struct HTTPResponse: Sendable, Equatable {
 
 /// Füllt die Vorlagen aus `shared/login/`.
 public enum LoginPages {
-    public static func login(provider: Provider, state: String, email: String?, error: String?) -> String {
-        render(SharedResources.loginHTML, [
+    public static func login(provider: Provider, state: String, email: String?, error: String?,
+                             servers: CustomServers? = nil) -> String {
+        var extra = ""
+        if provider.needsCustomServers {
+            let imap = servers?.imap ?? ServerEndpoint(host: "", port: 993, security: "tls")
+            let smtp = servers?.smtp ?? ServerEndpoint(host: "", port: 465, security: "tls")
+            extra = render(SharedResources.customServersHTML, [
+                "IMAP_HOST": imap.host, "IMAP_PORT": String(imap.port),
+                "IMAP_TLS_SELECTED": imap.usesSTARTTLS ? "" : "selected", "IMAP_STARTTLS_SELECTED": imap.usesSTARTTLS ? "selected" : "",
+                "SMTP_HOST": smtp.host, "SMTP_PORT": String(smtp.port),
+                "SMTP_TLS_SELECTED": smtp.usesSTARTTLS ? "" : "selected", "SMTP_STARTTLS_SELECTED": smtp.usesSTARTTLS ? "selected" : "",
+            ])
+        }
+        // EXTRA_FIELDS ist bereits fertiges (escaptes) HTML und wird roh eingesetzt.
+        return render(SharedResources.loginHTML, [
             "PROVIDER_NAME": provider.name,
             "PROVIDER_COLOR": provider.color,
             "PASSWORD_LABEL": provider.passwordLabel,
@@ -90,7 +103,22 @@ public enum LoginPages {
             "STATE": state,
             "EMAIL": email ?? "",
             "ERROR": error ?? "",
-        ])
+        ]).replacingOccurrences(of: "{{EXTRA_FIELDS}}", with: extra)
+    }
+
+    /// Liest und prüft die Server-Felder des Formulars („Andere (IMAP)“).
+    public static func parseServers(_ form: [String: String]) -> Result<CustomServers, LoginFormError> {
+        func endpoint(_ prefix: String, defaultPort: Int) -> ServerEndpoint? {
+            let host = (form["\(prefix)Host"] ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+            let port = Int(form["\(prefix)Port"] ?? "") ?? defaultPort
+            let security = form["\(prefix)Security"] == "starttls" ? "starttls" : "tls"
+            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789.-:[]")
+            guard !host.isEmpty, host.count <= 253, host.unicodeScalars.allSatisfy(allowed.contains), (1...65535).contains(port) else { return nil }
+            return ServerEndpoint(host: host, port: port, security: security)
+        }
+        guard let imap = endpoint("imap", defaultPort: 993) else { return .failure(.invalidServer("IMAP")) }
+        guard let smtp = endpoint("smtp", defaultPort: 465) else { return .failure(.invalidServer("SMTP")) }
+        return .success(CustomServers(imap: imap, smtp: smtp))
     }
 
     public static func done(title: String, message: String) -> String {
@@ -107,10 +135,34 @@ public enum LoginPages {
     }
 }
 
+public enum LoginFormError: Error, Equatable {
+    case invalidServer(String)
+
+    public var message: String {
+        switch self {
+        case .invalidServer(let kind): return "Bitte einen gültigen \(kind)-Server und Port angeben."
+        }
+    }
+}
+
+/// Zugangsdaten aus der Browser-Anmeldeseite.
+public struct BrowserCredentials: Sendable, Equatable {
+    public var email: String
+    public var password: String
+    /// Nur bei „Andere (IMAP)“.
+    public var servers: CustomServers?
+
+    public init(email: String, password: String, servers: CustomServers? = nil) {
+        self.email = email
+        self.password = password
+        self.servers = servers
+    }
+}
+
 /// Was der Browser zurückgeliefert hat.
 public enum BrowserLoginOutcome: Sendable, Equatable {
     case authorizationCode(String)
-    case credentials(email: String, password: String)
+    case credentials(BrowserCredentials)
 }
 
 /// Die Logik des lokalen Anmelde-Servers – unabhängig vom eigentlichen Socket (der lebt in der App).
@@ -123,7 +175,7 @@ public actor BrowserLoginRouter {
     }
 
     /// Prüft Zugangsdaten (IMAP-LOGIN) und liefert bei Fehler eine Meldung für die Seite.
-    public typealias Verifier = @Sendable (_ email: String, _ password: String) async -> String?
+    public typealias Verifier = @Sendable (BrowserCredentials) async -> String?
 
     public let state: String
     public let port: UInt16
@@ -132,7 +184,7 @@ public actor BrowserLoginRouter {
     public private(set) var isFinished = false
 
     public init(mode: Mode, port: UInt16, state: String = Data.secureRandom(count: 32).base64URLEncodedString,
-                verify: @escaping Verifier = { _, _ in nil }) {
+                verify: @escaping Verifier = { _ in nil }) {
         self.mode = mode
         self.port = port
         self.state = state
@@ -199,18 +251,26 @@ public actor BrowserLoginRouter {
             }
             let email = (form["email"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let password = form["password"] ?? ""
-            guard email.contains("@"), !password.isEmpty else {
-                return Result(response: HTTPResponse(status: 200, body: LoginPages.login(
-                    provider: provider, state: state, email: email, error: "Bitte E-Mail-Adresse und Passwort eingeben.")), outcome: nil)
+            var servers: CustomServers?
+            var formError: String?
+            if provider.needsCustomServers {
+                switch LoginPages.parseServers(form) {
+                case .success(let parsed): servers = parsed
+                case .failure(let error): formError = error.message
+                }
             }
-            if let error = await verify(email, password) {
-                return Result(response: HTTPResponse(status: 200, body: LoginPages.login(
-                    provider: provider, state: state, email: email, error: error)), outcome: nil)
+            func page(_ error: String) -> Result {
+                Result(response: HTTPResponse(status: 200, body: LoginPages.login(
+                    provider: provider, state: state, email: email, error: error, servers: servers)), outcome: nil)
             }
+            guard email.contains("@"), !password.isEmpty else { return page("Bitte E-Mail-Adresse und Passwort eingeben.") }
+            if let formError { return page(formError) }
+            let credentials = BrowserCredentials(email: email, password: password, servers: servers)
+            if let error = await verify(credentials) { return page(error) }
             isFinished = true
             return Result(response: HTTPResponse(status: 200, body: LoginPages.done(
                 title: "Angemeldet!", message: "\(email) wurde zu Lu-Mail hinzugefügt. Du kannst dieses Fenster schließen.")),
-                          outcome: .success(.credentials(email: email, password: password)))
+                          outcome: .success(.credentials(credentials)))
         }
     }
 

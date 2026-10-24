@@ -32,11 +32,29 @@ public struct ThemeTokens: Decodable, Sendable {
         public var large: Double
     }
 
+    public struct Variant: Decodable, Sendable {
+        public var name: String
+        public var description: String
+        public var colors: Colors
+    }
+
+    public struct Accent: Decodable, Sendable {
+        public var name: String
+        public var dark: String
+        public var light: String
+    }
+
     public var name: String
     public var colors: Colors
+    public var variants: [String: Variant]
+    public var accents: [String: Accent]
     public var providers: [String: String]
     public var categories: [String: String]
     public var radius: Radius
+
+    /// Reihenfolge für die Einstellungen.
+    public static let variantOrder = ["luna", "neumond", "vollmond"]
+    public static let accentOrder = ["lila", "blau", "tuerkis", "gruen", "rosa", "gold"]
 
     public static let shared: ThemeTokens = {
         do {

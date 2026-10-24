@@ -44,24 +44,23 @@ public struct AccountStore: Sendable {
     }
 }
 
-/// Nutzer-Regeln „Absender immer als … einsortieren“ (Adresse oder Domain → Kategorie).
-public struct SenderRuleStore: Sendable {
+/// Nutzer-Regeln (`rules.json`, Version 2 – alte flache Dateien werden weiter gelesen).
+public struct RuleStore: Sendable {
     public let paths: AppPaths
 
     public init(paths: AppPaths) {
         self.paths = paths
     }
 
-    public func load() -> [String: MailCategory] {
-        guard let data = try? Data(contentsOf: paths.rulesFile),
-              let raw = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
-        return raw.compactMapValues(MailCategory.init(rawValue:))
+    public func load() -> RuleSet {
+        guard let data = try? Data(contentsOf: paths.rulesFile) else { return RuleSet() }
+        return RuleSet.decode(data)
     }
 
-    public func save(_ rules: [String: MailCategory]) throws {
+    public func save(_ rules: RuleSet) throws {
         try paths.ensureExists()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(rules.mapValues(\.rawValue)).write(to: paths.rulesFile, options: .atomic)
+        try encoder.encode(rules).write(to: paths.rulesFile, options: .atomic)
     }
 }

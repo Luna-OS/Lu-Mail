@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "description": "Marken, die oft für Phishing missbraucht werden. Nennt der Anzeigename eine Marke, muss die Absender-Domain zu einer der Domains (oder deren Subdomains) gehören.",
+  "brands": [
+    { "name": "PayPal", "keywords": ["paypal"], "domains": ["paypal.com", "paypal.de", "paypal-communication.com"] },
+    { "name": "Amazon", "keywords": ["amazon"], "domains": ["amazon.com", "amazon.de", "amazon.co.uk", "amazonses.com", "marketplace.amazon.de"] },
+    { "name": "Apple", "keywords": ["apple", "icloud", "itunes"], "domains": ["apple.com", "icloud.com", "me.com", "insideapple.apple.com"] },
+    { "name": "Google", "keywords": ["google", "gmail"], "domains": ["google.com", "gmail.com", "accounts.google.com", "youtube.com"] },
+    { "name": "Microsoft", "keywords": ["microsoft", "outlook", "office 365", "office365"], "domains": ["microsoft.com", "outlook.com", "office.com", "live.com", "microsoftonline.com"] },
+    { "name": "Netflix", "keywords": ["netflix"], "domains": ["netflix.com", "mailer.netflix.com"] },
+    { "name": "DHL", "keywords": ["dhl"], "domains": ["dhl.de", "dhl.com", "deutschepost.de"] },
+    { "name": "Deutsche Post", "keywords": ["deutsche post"], "domains": ["deutschepost.de", "dhl.de"] },
+    { "name": "Sparkasse", "keywords": ["sparkasse"], "domains": ["sparkasse.de", "s-kundenservice.de"] },
+    { "name": "Volksbank", "keywords": ["volksbank", "raiffeisenbank"], "domains": ["vr.de", "volksbank.de", "atruvia.de"] },
+    { "name": "Deutsche Bank", "keywords": ["deutsche bank"], "domains": ["db.com", "deutsche-bank.de"] },
+    { "name": "Commerzbank", "keywords": ["commerzbank"], "domains": ["commerzbank.de", "commerzbank.com"] },
+    { "name": "ING", "keywords": ["ing-diba", "ing diba"], "domains": ["ing.de", "ing.com"] },
+    { "name": "N26", "keywords": ["n26"], "domains": ["n26.com"] },
+    { "name": "Telekom", "keywords": ["telekom", "t-online"], "domains": ["telekom.de", "t-online.de", "telekom.com"] },
+    { "name": "Vodafone", "keywords": ["vodafone"], "domains": ["vodafone.de", "vodafone.com"] },
+    { "name": "eBay", "keywords": ["ebay"], "domains": ["ebay.com", "ebay.de", "ebay-kleinanzeigen.de"] },
+    { "name": "Facebook", "keywords": ["facebook", "meta"], "domains": ["facebook.com", "facebookmail.com", "meta.com"] },
+    { "name": "Instagram", "keywords": ["instagram"], "domains": ["instagram.com", "mail.instagram.com"] },
+    { "name": "WhatsApp", "keywords": ["whatsapp"], "domains": ["whatsapp.com"] },
+    { "name": "Sberbank", "keywords": ["сбербанк", "sberbank"], "domains": ["sberbank.ru", "sber.ru"] },
+    { "name": "Госуслуги", "keywords": ["госуслуги", "gosuslugi"], "domains": ["gosuslugi.ru"] },
+    { "name": "Proton", "keywords": ["proton"], "domains": ["proton.me", "protonmail.com"] },
+    { "name": "Hostinger", "keywords": ["hostinger"], "domains": ["hostinger.com", "hostinger.de"] },
+    { "name": "Mail.ru", "keywords": ["mail.ru"], "domains": ["mail.ru", "corp.mail.ru"] },
+    { "name": "Finanzamt / ELSTER", "keywords": ["finanzamt", "elster"], "domains": ["elster.de", "finanzamt.de"] }
+  ]
+}

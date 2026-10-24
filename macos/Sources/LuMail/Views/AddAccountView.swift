@@ -19,7 +19,7 @@ struct AddAccountView: View {
                 Text("Konto hinzufügen").font(.title2.weight(.semibold))
             }
 
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                 ForEach(model.catalog.providers) { provider in
                     ProviderTile(provider: provider, isSelected: selectedProvider?.id == provider.id) {
                         selectedProvider = provider
@@ -67,11 +67,11 @@ struct AddAccountView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedProvider == nil || isWaiting)
+                .disabled(selectedProvider == nil || isWaiting || !canSignIn)
             }
         }
         .padding(24)
-        .frame(width: 560)
+        .frame(width: 680)
         .background(LuTheme.surface)
         .onDisappear { signInTask?.cancel() }
     }
@@ -84,12 +84,23 @@ struct AddAccountView: View {
                 .textFieldStyle(.roundedBorder)
                 .disabled(isWaiting)
 
-            if usesOAuth {
+            if !provider.authMethods.contains(.password) && !usesOAuth {
+                Label("\(provider.name) erlaubt die Anmeldung nur über die eigene Anmeldeseite (OAuth). Trage dafür einmalig eine Client-ID in oauth.json ein.",
+                      systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(LuTheme.moon)
+                Button("oauth.json öffnen und Anleitung lesen …") { model.revealOAuthConfig() }
+                    .buttonStyle(.link)
+            } else if usesOAuth {
                 Label("Du wirst zur Anmeldeseite von \(provider.name) weitergeleitet. Lu-Mail sieht dein Passwort nie.",
                       systemImage: "lock.shield")
             } else {
                 Label("Im Browser öffnet sich eine Lu-Mail-Anmeldeseite (läuft lokal auf deinem Mac). Dort gibst du dein \(provider.passwordLabel) ein.",
                       systemImage: "lock.shield")
+                if provider.needsCustomServers {
+                    Text("Auf der Anmeldeseite gibst du zusätzlich IMAP- und SMTP-Server ein.")
+                        .font(.callout)
+                        .foregroundStyle(LuTheme.textSecondary)
+                }
                 Text(provider.passwordHelp)
                     .font(.callout)
                     .foregroundStyle(LuTheme.textSecondary)
@@ -109,6 +120,12 @@ struct AddAccountView: View {
         }
         .font(.callout)
         .foregroundStyle(LuTheme.textPrimary)
+    }
+
+    /// OAuth-only-Anbieter (Outlook) brauchen eine Client-ID in oauth.json.
+    private var canSignIn: Bool {
+        guard let provider = selectedProvider else { return false }
+        return provider.authMethods.contains(.password) || model.auth.usesOAuth(provider)
     }
 
     private func startSignIn() {
@@ -143,7 +160,7 @@ struct ProviderTile: View {
                 Text(String(provider.name.prefix(1)))
                     .font(.title3.weight(.bold))
                     .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 32, height: 32)
                     .background(RoundedRectangle(cornerRadius: LuTheme.radiusMedium).fill(LuTheme.provider(provider.id).gradient))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(provider.name).font(.headline).foregroundStyle(LuTheme.textPrimary)

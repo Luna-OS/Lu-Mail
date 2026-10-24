@@ -3,20 +3,25 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @State private var theme = ThemeSettings.shared
+    @State private var lock = AppLock.shared
 
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
             SidebarView()
-                .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 360)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 360)
         } content: {
             MessageListView()
-                .navigationSplitViewColumnWidth(min: 300, ideal: 380, max: 520)
+                .navigationSplitViewColumnWidth(min: 300, ideal: 400, max: 560)
         } detail: {
             MessageDetailView()
         }
+        .id(theme.revision)
         .background(LuTheme.background)
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Suchen")
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Suchen (Enter: auch auf dem Server)")
+        .onSubmit(of: .search) { Task { await model.searchOnServer() } }
+        .onChange(of: model.searchText) { _, newValue in if newValue.isEmpty { model.serverResults = [] } }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -35,12 +40,28 @@ struct ContentView: View {
             }
         }
         .onChange(of: model.selection) { _, _ in model.selectionChanged() }
-        .onChange(of: model.selectedMessageID) { _, _ in model.openSelectedMessage() }
+        .onChange(of: model.selectedMessageIDs) { _, _ in model.openSelectedMessage() }
         .sheet(isPresented: $model.showAddAccount) {
             AddAccountView().environment(model)
         }
         .sheet(item: $model.composeDraft) { draft in
             ComposeView(draft: draft).environment(model)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                UpdateBar()
+                if model.isOffline {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.slash")
+                        Text("Offline – du siehst die zuletzt geladenen Nachrichten.")
+                        Spacer()
+                    }
+                    .font(.callout)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(LuTheme.moon.opacity(0.15))
+                }
+            }
         }
         .overlay(alignment: .bottom) {
             if let banner = model.banner {
@@ -54,12 +75,14 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: model.banner)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            UpdateBar()
-        }
         .overlay {
             if model.accounts.isEmpty {
                 WelcomeView()
+            }
+        }
+        .overlay {
+            if lock.isLocked {
+                LockView()
             }
         }
     }
@@ -87,6 +110,32 @@ struct BannerView: View {
     }
 }
 
+/// Sperrbildschirm (Touch ID / Passwort).
+struct LockView: View {
+    @State private var lock = AppLock.shared
+
+    var body: some View {
+        VStack(spacing: 16) {
+            MoonMark(size: 56)
+            Text("Lu-Mail ist gesperrt").font(.title2.weight(.semibold))
+            Button {
+                lock.unlock()
+            } label: {
+                Label("Mit \(lock.biometryName) entsperren", systemImage: "lock.open")
+                    .padding(.horizontal, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            if let error = lock.lastError {
+                Text(error).font(.caption).foregroundStyle(LuTheme.danger)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThickMaterial)
+        .onAppear { lock.unlock() }
+    }
+}
+
 /// Erster Start: noch kein Konto.
 struct WelcomeView: View {
     @Environment(AppModel.self) private var model
@@ -97,20 +146,21 @@ struct WelcomeView: View {
             Text("Willkommen bei Lu-Mail")
                 .font(.largeTitle.weight(.semibold))
                 .foregroundStyle(LuTheme.textPrimary)
-            Text("Gmail, Proton Mail, Mail.ru und Hostinger – alle Postfächer an einem Ort,\nsortiert nach Anbieter, Konto und Kategorie.")
+            Text("Alle deine Postfächer an einem Ort –\nsortiert nach Anbieter, Konto und Kategorie.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(LuTheme.textSecondary)
-            HStack(spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
                 ForEach(model.catalog.providers) { provider in
                     HStack(spacing: 6) {
                         ProviderDot(providerId: provider.id)
-                        Text(provider.name).font(.callout)
+                        Text(provider.name).font(.callout).lineLimit(1)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(Capsule().fill(LuTheme.surface))
                 }
             }
+            .frame(maxWidth: 720)
             Button {
                 model.showAddAccount = true
             } label: {

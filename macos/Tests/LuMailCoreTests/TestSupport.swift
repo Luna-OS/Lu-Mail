@@ -9,6 +9,7 @@ final class ScriptedTransport: MailTransport, @unchecked Sendable {
     private let responder: (String) -> String?
     private(set) var isClosed = false
     private var lastTag = ""
+    var onStartTLS: (() -> Void)?
 
     init(greeting: String, responder: @escaping (String) -> String?) {
         self.responder = responder
@@ -39,8 +40,16 @@ final class ScriptedTransport: MailTransport, @unchecked Sendable {
     }
 
     func receive() async throws -> Data {
+        // Kurz warten, falls eine Antwort noch aus einem anderen Task kommt (IDLE/DONE).
+        for _ in 0..<200 where incoming.isEmpty {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
         guard !incoming.isEmpty else { throw TransportError.closed }
         return incoming.removeFirst()
+    }
+
+    func startTLS() async throws {
+        onStartTLS?()
     }
 
     func close() {

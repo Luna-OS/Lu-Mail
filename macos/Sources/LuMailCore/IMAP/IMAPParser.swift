@@ -228,6 +228,7 @@ public struct IMAPResponse: Sendable {
 /// Liest vollständige Antworten (Zeilen plus Literale) vom Server.
 final class IMAPResponseReader {
     private let reader: LineReader
+    var hasBufferedData: Bool { reader.hasBufferedData }
 
     init(transport: MailTransport) {
         reader = LineReader(transport: transport)

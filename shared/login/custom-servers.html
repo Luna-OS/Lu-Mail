@@ -1,0 +1,21 @@
+      <fieldset style="border:1px solid var(--border);border-radius:10px;padding:4px 14px 14px;margin-top:16px">
+        <legend style="font-size:13px;font-weight:600;padding:0 6px">Server</legend>
+        <label for="imapHost">IMAP-Server</label>
+        <input id="imapHost" name="imapHost" required value="{{IMAP_HOST}}" placeholder="imap.beispiel.de">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1"><label for="imapPort">Port</label><input id="imapPort" name="imapPort" type="number" min="1" max="65535" required value="{{IMAP_PORT}}"></div>
+          <div style="flex:1"><label for="imapSecurity">Verschlüsselung</label>
+            <select id="imapSecurity" name="imapSecurity" style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:inherit">
+              <option value="tls" {{IMAP_TLS_SELECTED}}>SSL/TLS</option><option value="starttls" {{IMAP_STARTTLS_SELECTED}}>STARTTLS</option>
+            </select></div>
+        </div>
+        <label for="smtpHost">SMTP-Server</label>
+        <input id="smtpHost" name="smtpHost" required value="{{SMTP_HOST}}" placeholder="smtp.beispiel.de">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1"><label for="smtpPort">Port</label><input id="smtpPort" name="smtpPort" type="number" min="1" max="65535" required value="{{SMTP_PORT}}"></div>
+          <div style="flex:1"><label for="smtpSecurity">Verschlüsselung</label>
+            <select id="smtpSecurity" name="smtpSecurity" style="width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:inherit">
+              <option value="tls" {{SMTP_TLS_SELECTED}}>SSL/TLS</option><option value="starttls" {{SMTP_STARTTLS_SELECTED}}>STARTTLS</option>
+            </select></div>
+        </div>
+      </fieldset>

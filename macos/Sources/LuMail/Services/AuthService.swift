@@ -32,6 +32,10 @@ final class AuthService: @unchecked Sendable {
         if let credentials = oauthCredentials(for: provider), let endpoints = provider.oauth {
             return try await signInWithOAuth(provider: provider, endpoints: endpoints, credentials: credentials, emailHint: emailHint)
         }
+        guard provider.authMethods.contains(.password) else {
+            // z. B. Outlook: nur OAuth möglich, aber keine Client-ID eingetragen.
+            throw OAuthError.notConfigured(provider.name)
+        }
         return try await signInWithPassword(provider: provider, emailHint: emailHint)
     }
 
@@ -62,9 +66,10 @@ final class AuthService: @unchecked Sendable {
         let server = try await LoopbackServer.start()
         defer { server.stop() }
         let transports = transports
-        let router = BrowserLoginRouter(mode: .password(provider, emailHint: emailHint), port: server.port) { email, password in
+        let router = BrowserLoginRouter(mode: .password(provider, emailHint: emailHint), port: server.port) { credentials in
             do {
-                try await MailAccountSession.verify(provider: provider, credential: .password(user: email, password: password),
+                try await MailAccountSession.verify(provider: provider, endpoint: credentials.servers?.imap,
+                                                    credential: .password(user: credentials.email, password: credentials.password),
                                                     transports: transports)
                 return nil
             } catch {
@@ -74,11 +79,12 @@ final class AuthService: @unchecked Sendable {
         server.attach(router)
         await openInBrowser(router.loginPageURL)
 
-        guard case .credentials(let email, let password) = try await server.waitForOutcome() else {
+        guard case .credentials(let credentials) = try await server.waitForOutcome() else {
             throw OAuthError.authorizationDenied("unerwartete Antwort")
         }
-        let account = Account(providerId: provider.id, email: email, displayName: email, authMethod: .password)
-        try Keychain.save(AccountSecret(password: password, tokens: nil), for: account.id)
+        let account = Account(providerId: provider.id, email: credentials.email, displayName: credentials.email,
+                              authMethod: .password, customServers: credentials.servers)
+        try Keychain.save(AccountSecret(password: credentials.password, tokens: nil), for: account.id)
         return account
     }
 
@@ -88,6 +94,8 @@ final class AuthService: @unchecked Sendable {
             return "\(provider.name) hat die Anmeldung abgelehnt. Bitte prüfe E-Mail-Adresse und \(provider.passwordLabel)."
         case TransportError.connectionFailed(let reason) where provider.id == "proton":
             return "Die Proton Mail Bridge ist nicht erreichbar (\(reason)). Läuft die Bridge und ist der Verbindungsmodus auf „SSL“ gestellt?"
+        case IMAPError.commandFailed(_, let response) where provider.id == "gmx" || provider.id == "webde":
+            return "\(provider.name) verweigert den Zugriff (\(response)). Ist der IMAP-Abruf in den Postfach-Einstellungen aktiviert?"
         default:
             return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

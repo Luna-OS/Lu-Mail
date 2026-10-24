@@ -106,8 +106,12 @@ final class NetworkTransport: MailTransport, @unchecked Sendable {
 
 struct NetworkTransportFactory: MailTransportFactory {
     func connect(to endpoint: ServerEndpoint, allowInsecureLoopbackCertificate: Bool) async throws -> MailTransport {
-        try await NetworkTransport.connect(host: endpoint.host, port: endpoint.port,
-                                           allowInsecureLoopbackCertificate: allowInsecureLoopbackCertificate)
+        if endpoint.usesSTARTTLS {
+            return try await StreamTransport.connect(host: endpoint.host, port: endpoint.port,
+                                                     allowInsecureLoopbackCertificate: allowInsecureLoopbackCertificate)
+        }
+        return try await NetworkTransport.connect(host: endpoint.host, port: endpoint.port,
+                                                  allowInsecureLoopbackCertificate: allowInsecureLoopbackCertificate)
     }
 }
 

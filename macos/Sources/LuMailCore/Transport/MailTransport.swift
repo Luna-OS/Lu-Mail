@@ -7,18 +7,28 @@ public protocol MailTransport: AnyObject {
     /// Liefert die nächsten empfangenen Bytes (mindestens eines). Wirft `TransportError.closed` am Ende.
     func receive() async throws -> Data
     func close()
+    /// Schaltet eine bestehende Klartext-Verbindung auf TLS um (STARTTLS).
+    func startTLS() async throws
+}
+
+public extension MailTransport {
+    func startTLS() async throws {
+        throw TransportError.connectionFailed("STARTTLS wird von dieser Verbindung nicht unterstützt")
+    }
 }
 
 public enum TransportError: Error, LocalizedError, Equatable {
     case closed
     case timeout
     case connectionFailed(String)
+    case startTLSUnavailable
 
     public var errorDescription: String? {
         switch self {
         case .closed: return "Die Verbindung zum Server wurde geschlossen."
         case .timeout: return "Der Server antwortet nicht."
         case .connectionFailed(let reason): return "Verbindung fehlgeschlagen: \(reason)"
+        case .startTLSUnavailable: return "Der Server bietet keine verschlüsselte Verbindung (STARTTLS) an."
         }
     }
 }
@@ -44,6 +54,9 @@ final class LineReader {
             buffer.append(try await transport.receive())
         }
     }
+
+    /// Für STARTTLS: Es dürfen keine ungelesenen Klartext-Bytes mehr im Puffer liegen.
+    var hasBufferedData: Bool { !buffer.isEmpty }
 
     func readBytes(_ count: Int) async throws -> Data {
         while buffer.count < count {
