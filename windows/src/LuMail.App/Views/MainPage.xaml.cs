@@ -71,6 +71,7 @@ public sealed partial class MainPage : Page
         Vm.PropertyChanged += OnViewModelPropertyChanged;
         Vm.MessagesReset += OnMessagesReset;
         Vm.ErrorOccurred += (_, message) => ShowMessage(message, isError: true);
+        Vm.InfoOccurred += (_, message) => ShowMessage(message, isError: false, severity: InfoBarSeverity.Informational);
         Vm.NewMessagesArrived += (_, items) =>
         {
             foreach (var item in items.OrderByDescending(m => m.Summary.Date).Take(5)) App.Notifications.ShowMessage(item);
@@ -715,7 +716,7 @@ public sealed partial class MainPage : Page
     {
         if (Vm.Accounts.Count == 0)
         {
-            ShowMessage("Bitte zuerst ein Konto hinzufügen.", isError: false);
+            _ = ShowAddAccountAsync(); // §19: „Neue E-Mail“ ohne Konto öffnet „Konto hinzufügen“
             return;
         }
         var window = new ComposeWindow();
@@ -875,31 +876,65 @@ public sealed partial class MainPage : Page
 
     // ======================================================= Dialoge
 
-    private async void OnAddAccountClick(object sender, RoutedEventArgs e)
+    private bool _addAccountOpen;
+    private SettingsWindow? _settingsWindow;
+
+    private async void OnAddAccountClick(object sender, RoutedEventArgs e) => await ShowAddAccountAsync();
+
+    /// <summary>Assistent „Konto hinzufügen“ (§17).</summary>
+    public async Task ShowAddAccountAsync()
     {
-        var dialog = new AddAccountDialog { XamlRoot = XamlRoot };
-        await dialog.ShowAsync();
-        if (dialog.AddedAccount is { } account)
+        if (_addAccountOpen || XamlRoot is null) return;
+        _addAccountOpen = true;
+        try
         {
-            ShowMessage($"{account.Email} wurde hinzugefügt.", isError: false);
-            await Vm.RefreshAllAsync();
-            var inbox = Vm.Sidebar.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target == SidebarTarget.Category);
-            if (inbox is not null) await Vm.SelectAsync(inbox);
-            UpdateListHeader();
+            var dialog = new AddAccountDialog { XamlRoot = XamlRoot, RequestedTheme = ActualTheme };
+            await dialog.ShowAsync();
+            if (dialog.AddedAccount is { } account)
+            {
+                await Vm.RefreshAllAsync();
+                var inbox = Vm.Sidebar.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target == SidebarTarget.Category);
+                if (inbox is not null) await Vm.SelectAsync(inbox);
+                UpdateListHeader();
+            }
+        }
+        finally
+        {
+            _addAccountOpen = false;
         }
     }
 
-    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    /// <summary>Einstellungen als eigenes Fenster (§19).</summary>
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new SettingsDialog { XamlRoot = XamlRoot };
-        dialog.Initialize(Vm.Accounts, Vm);
-        await dialog.ShowAsync();
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+        var window = new SettingsWindow(Vm.Accounts, Vm);
+        window.Page.AppearanceChanged += (_, _) =>
+        {
+            if (HostWindow is not null) ThemeService.ApplyMode(HostWindow, _s.Settings);
+            RenderCurrent();
+        };
+        window.Page.DataChanged += (_, _) => Vm.RebuildSidebar();
+        window.Closed += async (_, _) =>
+        {
+            _settingsWindow = null;
+            await ApplySettingsAsync(window.Page.AccountsChanged);
+        };
+        _settingsWindow = window;
+        window.Activate();
+    }
 
+    private async Task ApplySettingsAsync(bool accountsChanged)
+    {
         StartRefreshTimer();
         _s.Mail.Cache = _s.Settings.OfflineCache ? _s.Cache : null;
         ThemeService.ApplyPalette(_s.Theme, _s.Settings);
         if (HostWindow is not null) ThemeService.ApplyMode(HostWindow, _s.Settings);
-        if (dialog.AccountsChanged)
+        if (accountsChanged)
         {
             ClearReader();
             await Vm.RefreshAllAsync();
@@ -973,10 +1008,17 @@ public sealed partial class MainPage : Page
 
     // ===================================================== Meldungen
 
-    public void ShowMessage(string message, bool isError, string? actionText = null, Action? action = null)
+    /// <summary>Hinweis unten rechts. Ohne <paramref name="severity"/>: Fehler bzw. Erfolg.</summary>
+    public void ShowMessage(string message, bool isError, string? actionText = null, Action? action = null, InfoBarSeverity? severity = null)
     {
-        MessageBar.Severity = isError ? InfoBarSeverity.Error : InfoBarSeverity.Success;
-        MessageBar.Title = isError ? "Fehler" : "";
+        var kind = severity ?? (isError ? InfoBarSeverity.Error : InfoBarSeverity.Success);
+        MessageBar.Severity = kind;
+        MessageBar.Title = kind switch
+        {
+            InfoBarSeverity.Error => "Fehler",
+            InfoBarSeverity.Warning => "Hinweis",
+            _ => "",
+        };
         MessageBar.Message = message;
         if (actionText is not null && action is not null)
         {

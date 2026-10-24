@@ -51,6 +51,8 @@ public sealed class MainViewModel : ObservableObject
     public event EventHandler? MessagesReset;
     /// <summary>Fehlermeldungen für die Anzeige.</summary>
     public event EventHandler<string>? ErrorOccurred;
+    /// <summary>Hinweise (Info) für die Anzeige.</summary>
+    public event EventHandler<string>? InfoOccurred;
     /// <summary>Neue ungelesene Nachrichten (Posteingang/Updates) seit dem letzten Laden → Systemmitteilung.</summary>
     public event EventHandler<IReadOnlyList<MessageItem>>? NewMessagesArrived;
     /// <summary>Fällige Erinnerung.</summary>
@@ -703,7 +705,7 @@ public sealed class MainViewModel : ObservableObject
             _serverResults = results.OrderByDescending(m => m.Summary.Date).ToList();
             ApplyFilter();
             if (errors.Count > 0) ErrorOccurred?.Invoke(this, "Serversuche: " + string.Join("\n", errors));
-            else if (_serverResults.Count == 0) ErrorOccurred?.Invoke(this, "Auf dem Server wurden keine weiteren Treffer gefunden.");
+            else if (_serverResults.Count == 0) InfoOccurred?.Invoke(this, "Auf dem Server wurden keine weiteren Treffer gefunden.");
         }
         finally
         {

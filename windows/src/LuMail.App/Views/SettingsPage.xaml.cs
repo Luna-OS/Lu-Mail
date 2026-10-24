@@ -10,8 +10,8 @@ using Microsoft.UI.Xaml.Shapes;
 
 namespace LuMail.App.Views;
 
-/// <summary>Einstellungen: Allgemein, Konten (Signatur), Regeln, Darstellung, Datenschutz, Updates.</summary>
-public sealed partial class SettingsDialog : ContentDialog
+/// <summary>Einstellungen (eigenes Fenster, FUNKTIONEN §19): Allgemein, Darstellung, Konten, Regeln, Datenschutz, Updates.</summary>
+public sealed partial class SettingsPage : Page
 {
     private static readonly int[] Intervals = { 1, 3, 5, 10, 15, 30, 60 };
     private static readonly (string Id, string Label)[] CleanupCategories =
@@ -30,9 +30,16 @@ public sealed partial class SettingsDialog : ContentDialog
     /// <summary>True, wenn ein Konto entfernt wurde.</summary>
     public bool AccountsChanged { get; private set; }
 
-    public SettingsDialog()
+    /// <summary>Darstellung geändert (Fenster neu einfärben).</summary>
+    public event EventHandler? AppearanceChanged;
+
+    /// <summary>Konten oder Regeln geändert (Sidebar neu aufbauen).</summary>
+    public event EventHandler? DataChanged;
+
+    public SettingsPage()
     {
         InitializeComponent();
+        Nav.SelectedItem = Nav.MenuItems[0];
         var settings = _s.Settings;
 
         foreach (var minutes in Intervals)
@@ -114,6 +121,17 @@ public sealed partial class SettingsDialog : ContentDialog
 
     private static readonly GridLength Auto = GridLength.Auto;
     private static readonly GridLength Star = new(1, GridUnitType.Star);
+
+    private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        var tag = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string ?? "general";
+        GeneralSection.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
+        AppearanceSection.Visibility = tag == "appearance" ? Visibility.Visible : Visibility.Collapsed;
+        AccountsSection.Visibility = tag == "accounts" ? Visibility.Visible : Visibility.Collapsed;
+        RulesSection.Visibility = tag == "rules" ? Visibility.Visible : Visibility.Collapsed;
+        PrivacySection.Visibility = tag == "privacy" ? Visibility.Visible : Visibility.Collapsed;
+        UpdatesSection.Visibility = tag == "updates" ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     // ------------------------------------------------------------ Allgemein
 
@@ -232,6 +250,7 @@ public sealed partial class SettingsDialog : ContentDialog
         _s.Outbox.RemoveAccount(account.Id);
         AccountsChanged = true;
         BuildAccounts(_s.Accounts.Load());
+        DataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ---------------------------------------------------------------- Regeln
@@ -248,7 +267,7 @@ public sealed partial class SettingsDialog : ContentDialog
         {
             action();
             BuildRules();
-            _vm?.RebuildSidebar();
+            DataChanged?.Invoke(this, EventArgs.Empty);
         };
         return b;
     }
@@ -323,7 +342,7 @@ public sealed partial class SettingsDialog : ContentDialog
         _s.Rules.AddCategory(name, color, "tag");
         CategoryNameBox.Text = "";
         BuildRules();
-        _vm?.RebuildSidebar();
+        DataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ------------------------------------------------------------ Darstellung
@@ -337,7 +356,7 @@ public sealed partial class SettingsDialog : ContentDialog
         _s.SaveSettings();
         VariantDescription.Text = _s.Theme.Variant(_s.Settings.ThemeVariant).Description;
         ThemeService.ApplyPalette(_s.Theme, _s.Settings);
-        RequestedTheme = ThemeService.RequestedTheme(_s.Settings);
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ------------------------------------------------------------ Datenschutz
