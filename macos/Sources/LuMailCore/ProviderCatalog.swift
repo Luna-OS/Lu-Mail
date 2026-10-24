@@ -57,9 +57,34 @@ public struct Provider: Codable, Hashable, Identifiable, Sendable {
     public var saveSentViaImap: Bool?
     /// Server werden bei der Anmeldung eingegeben („Andere (IMAP)“).
     public var customServers: Bool?
+    /// Endungen von MX-Hosts, an denen der Anbieter auch bei eigenen Domains erkannt wird.
+    public var mxSuffixes: [String]?
+    /// Anleitung für den Assistenten „Konto hinzufügen“.
+    public var setup: SetupGuide?
 
     public var usesGmailCategories: Bool { serverCategories == "gmail" }
     public var needsCustomServers: Bool { customServers == true }
+}
+
+/// „So geht's“-Schritte für den Assistenten (docs/FUNKTIONEN.md §17).
+public struct SetupGuide: Codable, Hashable, Sendable {
+    public struct Step: Codable, Hashable, Sendable {
+        public var text: String
+        public var url: String?
+        public var button: String?
+    }
+
+    public var passwordSteps: [Step]
+    public var oauthSteps: [Step]?
+    /// Lokaler Port, der erreichbar sein muss (Proton Mail Bridge).
+    public var checkLocalPort: Int?
+}
+
+/// Einstellungen für die automatische Anbieter-Erkennung.
+public struct DiscoveryConfig: Codable, Hashable, Sendable {
+    public var mxLookup: String
+    public var autoconfig: [String]
+    public var timeoutSeconds: Double
 }
 
 public struct FolderRoleHints: Codable, Hashable, Sendable {
@@ -71,15 +96,18 @@ public struct FolderRoleHints: Codable, Hashable, Sendable {
 public struct ProviderCatalog: Sendable {
     public let providers: [Provider]
     public let folderRoles: [FolderRole: FolderRoleHints]
+    public let discovery: DiscoveryConfig?
 
     private struct File: Decodable {
         var providers: [Provider]
         var folderRoles: [String: FolderRoleHints]
+        var discovery: DiscoveryConfig?
     }
 
     public init(json: String = SharedResources.providersJSON) throws {
         let file = try JSONDecoder().decode(File.self, from: Data(json.utf8))
         providers = file.providers
+        discovery = file.discovery
         var roles: [FolderRole: FolderRoleHints] = [:]
         for (key, hints) in file.folderRoles {
             if let role = FolderRole(rawValue: key) { roles[role] = hints }
@@ -100,5 +128,14 @@ public struct ProviderCatalog: Sendable {
     public func provider(forEmail email: String) -> Provider? {
         let domain = MailAddress(name: nil, address: email).domain
         return providers.first { $0.domains.contains(domain) }
+    }
+
+    /// Anbieter, dessen `mxSuffixes` zum MX-Host passt (z. B. „aspmx.l.google.com“ → Gmail).
+    public func provider(forMXHost host: String) -> Provider? {
+        var normalized = host.lowercased()
+        if normalized.hasSuffix(".") { normalized.removeLast() }
+        return providers.first { provider in
+            (provider.mxSuffixes ?? []).contains { normalized == $0 || normalized.hasSuffix("." + $0) }
+        }
     }
 }

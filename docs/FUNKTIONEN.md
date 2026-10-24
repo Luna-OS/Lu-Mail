@@ -123,3 +123,55 @@ Verschlüsselung; die Werte werden pro Konto in `accounts.json → customServers
 `shared/theme/lu-theme.json → variants`: **Luna** (Standard), **Neumond** (tiefschwarz, für OLED),
 **Vollmond** (warm-hell), jeweils mit eigenen Paletten; dazu Akzentfarben (Lila, Blau, Türkis, Grün, Rosa, Gold).
 Einstellungen → Darstellung: Modus System/Hell/Dunkel, Variante, Akzentfarbe.
+
+## 17. Konto hinzufügen – einfach (Assistent)
+
+Ein Dialog/Fenster mit zwei Schritten; der Haupt-Button ist **immer sichtbar** (Fußzeile, nicht im scrollbaren Inhalt).
+
+**Schritt 1 – „Wie lautet deine E-Mail-Adresse?“**
+- Großes Eingabefeld oben, darunter eine kompakte Anbieter-Auswahl (3 Spalten, kleine Kacheln, alle 10 ohne
+  Scrollen sichtbar). Klick auf eine Kachel → direkt Schritt 2.
+- „Weiter“ mit eingegebener Adresse → Anbieter-Erkennung (siehe unten) → Schritt 2. Während der Suche:
+  „Suche Einstellungen für <domain> …“ (höchstens `discovery.timeoutSeconds`).
+
+**Anbieter-Erkennung** (`shared/providers.json`):
+1. Domain steht in `domains` eines Anbieters → dieser Anbieter.
+2. Sonst MX-Abfrage per DNS-over-HTTPS (`discovery.mxLookup`, Header `Accept: application/dns-json`,
+   Antwortfeld `Answer[].data` = „10 mx1.example.com.“). Endet ein MX-Host (ohne Punkt am Ende) auf ein
+   `mxSuffixes`-Element eines Anbieters (gleich oder `.suffix`) → dieser Anbieter (z. B. Google Workspace → Gmail,
+   Hostinger-Domains → Hostinger).
+3. Sonst Autoconfig (Thunderbird-Format) der Reihe nach aus `discovery.autoconfig` (`{domain}`, `{email}`
+   URL-kodiert ersetzen, nur HTTPS): erster `incomingServer type="imap"` und erster `outgoingServer type="smtp"`
+   mit `socketType` `SSL` (→ `tls`) oder `STARTTLS` (→ `starttls`) → Anbieter „Andere (IMAP)“ mit vorausgefüllten Servern.
+4. Sonst „Andere (IMAP)“ mit leeren Serverfeldern.
+
+**Schritt 2 – Anbieter-Seite**
+- Kopf mit Anbieterfarbe und Name, darunter „So geht's“ als nummerierte Liste aus `setup.oauthSteps` (wenn eine
+  OAuth-Client-ID verfügbar ist, §18) bzw. `setup.passwordSteps`. Schritte mit `url` bekommen einen Button
+  (`button`), der die Seite im Standardbrowser öffnet.
+- `setup.checkLocalPort` (Proton): TCP-Verbindungstest auf 127.0.0.1:<port> → „✓ Bridge läuft“ bzw.
+  „✗ Bridge nicht gefunden – bitte starten“ (mit „Erneut prüfen“).
+- Fußzeile: „Zurück“ und Haupt-Button „Mit Google anmelden“ / „Mit Microsoft anmelden“ / „Mit Mail.ru anmelden“
+  (OAuth) bzw. „Im Browser anmelden“ (Passwort). OAuth-only ohne Client-ID (Outlook): Button deaktiviert, Hinweis auf §18.
+- Danach: Warte-Ansicht „Bitte im Browser fortfahren …“ mit „Abbrechen“; bei Erfolg „✓ <adresse> wurde
+  hinzugefügt“ und der Dialog schließt nach 1,5 s; bei Fehler eine verständliche Meldung und „Erneut versuchen“.
+- Die eingegebene Adresse und erkannte Server werden an die Browser-Anmeldeseite übergeben (vorausgefüllt).
+
+## 18. Eingebaute OAuth-Client-IDs
+
+Damit „Mit Google/Microsoft anmelden“ ohne eigene `oauth.json` funktioniert, baut die CI Client-IDs aus
+GitHub-Secrets in die Apps ein: `LUMAIL_GOOGLE_CLIENT_ID`, `LUMAIL_GOOGLE_CLIENT_SECRET`,
+`LUMAIL_MICROSOFT_CLIENT_ID`, `LUMAIL_MAILRU_CLIENT_ID`, `LUMAIL_MAILRU_CLIENT_SECRET`.
+- Format wie `oauth.json` (`{ "gmail": { "clientId", "clientSecret" }, "outlook": {…}, "mailru": {…} }`).
+- macOS: `macos/Sources/LuMailCore/Generated/BuiltInOAuth.swift` (`BuiltInOAuth.json`), Windows:
+  `windows/src/LuMail.Core/BuiltInOAuth.json` als EmbeddedResource. Im Repository stehen leere Platzhalter (`{}`);
+  `scripts/write-builtin-oauth.py` füllt sie in der CI.
+- Reihenfolge: Eintrag in der Nutzer-`oauth.json` → eingebauter Eintrag → keiner (Passwort-Anmeldung).
+- Desktop-Client-„Secrets“ sind bei Google/Mail.ru nicht geheim (RFC 8252); Microsoft nutzt einen öffentlichen Client ohne Secret.
+
+## 19. Oberfläche
+
+- Einstellungen als eigenes, in der Größe veränderbares Fenster mit Seitenleiste (Allgemein, Darstellung, Konten,
+  Regeln, Datenschutz, Updates) – keine abgeschnittenen Reiter.
+- „Neue E-Mail“ ohne Konto öffnet „Konto hinzufügen“.
+- Hinweise nutzen die passende Art (Info/Erfolg/Warnung/Fehler), z. B. „Bitte zuerst ein Konto hinzufügen“ = Info.

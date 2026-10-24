@@ -1,185 +1,354 @@
 import AppKit
 import LuMailCore
+import Network
 import SwiftUI
 
-/// Anbieter wählen → „Im Browser anmelden“ → warten, bis der Browser fertig ist.
+/// Assistent „Konto hinzufügen“ (docs/FUNKTIONEN.md §17):
+/// 1. E-Mail-Adresse eingeben oder Anbieter antippen → 2. „So geht's“ → Anmelden im Browser.
 struct AddAccountView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedProvider: Provider?
-    @State private var emailHint = ""
-    @State private var signInTask: Task<Void, Never>?
-    @State private var isWaiting = false
+
+    enum Step: Equatable {
+        case choose
+        case guide
+        case waiting
+        case done(String)
+    }
+
+    @State private var step: Step = .choose
+    @State private var email = ""
+    @State private var provider: Provider?
+    @State private var servers: CustomServers?
+    @State private var isDiscovering = false
     @State private var errorMessage: String?
+    @State private var bridgeRunning: Bool?
+    @State private var signInTask: Task<Void, Never>?
+    @FocusState private var emailFocused: Bool
 
     var body: some View {
+        VStack(spacing: 0) {
+            Group {
+                switch step {
+                case .choose: chooseStep
+                case .guide: guideStep
+                case .waiting: waitingStep
+                case .done(let address): doneStep(address)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            Divider().overlay(LuTheme.border)
+            footer
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+        }
+        .frame(width: 620, height: 560)
+        .background(LuTheme.surface)
+        .onDisappear { signInTask?.cancel() }
+    }
+
+    // MARK: Schritt 1
+
+    private var chooseStep: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
                 MoonMark(size: 22)
                 Text("Konto hinzufügen").font(.title2.weight(.semibold))
             }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
-                ForEach(model.catalog.providers) { provider in
-                    ProviderTile(provider: provider, isSelected: selectedProvider?.id == provider.id) {
-                        selectedProvider = provider
-                        errorMessage = nil
-                    }
-                    .disabled(isWaiting)
-                }
-            }
-
-            if let provider = selectedProvider {
-                details(provider)
-            } else {
-                Text("Wähle deinen Anbieter. Die Anmeldung läuft anschließend in deinem Browser.")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Wie lautet deine E-Mail-Adresse?").font(.headline)
+                TextField("name@beispiel.de", text: $email)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
+                    .focused($emailFocused)
+                    .onSubmit(continueWithEmail)
+                Text("Lu-Mail erkennt deinen Anbieter automatisch – auch bei eigenen Domains.")
+                    .font(.caption)
                     .foregroundStyle(LuTheme.textSecondary)
             }
-
-            if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(LuTheme.danger)
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
+            Text("Oder Anbieter wählen").font(.subheadline.weight(.medium)).foregroundStyle(LuTheme.textSecondary)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
+                ForEach(model.catalog.providers) { provider in
+                    ProviderTile(provider: provider) { open(provider, servers: nil) }
+                }
             }
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill").foregroundStyle(LuTheme.danger).font(.callout)
+            }
+        }
+        .onAppear { emailFocused = true }
+    }
 
-            HStack {
-                Spacer()
-                Button(isWaiting ? "Abbrechen" : "Schließen") {
-                    if isWaiting {
-                        signInTask?.cancel()
-                    } else {
-                        dismiss()
+    private func continueWithEmail() {
+        let address = email.trimmingCharacters(in: .whitespaces)
+        guard address.contains("@"), address.split(separator: "@").last?.contains(".") == true else {
+            errorMessage = "Bitte eine vollständige E-Mail-Adresse eingeben."
+            return
+        }
+        errorMessage = nil
+        isDiscovering = true
+        Task {
+            let result = await ProviderDiscovery(catalog: model.catalog).discover(email: address)
+            isDiscovering = false
+            open(result.provider, servers: result.servers)
+        }
+    }
+
+    private func open(_ provider: Provider, servers: CustomServers?) {
+        self.provider = provider
+        self.servers = servers
+        errorMessage = nil
+        bridgeRunning = nil
+        step = .guide
+        checkBridge()
+    }
+
+    // MARK: Schritt 2
+
+    private var usesOAuth: Bool { provider.map { model.auth.usesOAuth($0) } ?? false }
+    private var oauthOnlyWithoutClient: Bool {
+        guard let provider else { return false }
+        return !provider.authMethods.contains(.password) && !usesOAuth
+    }
+
+    @ViewBuilder
+    private var guideStep: some View {
+        if let provider {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Text(String(provider.name.prefix(1)))
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(RoundedRectangle(cornerRadius: LuTheme.radiusMedium).fill(LuTheme.provider(provider.id).gradient))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(provider.name).font(.title2.weight(.semibold))
+                        Text(email.isEmpty ? "Neues Konto" : email).font(.callout).foregroundStyle(LuTheme.textSecondary)
                     }
                 }
-                .keyboardShortcut(.cancelAction)
-                Button {
-                    startSignIn()
-                } label: {
-                    if isWaiting {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Bitte im Browser fortfahren …")
+
+                Text("So geht's").font(.headline)
+                let steps = (usesOAuth ? provider.setup?.oauthSteps : nil) ?? provider.setup?.passwordSteps ?? []
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, item in
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.caption.weight(.bold))
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(LuTheme.accent.opacity(0.18)))
+                                .foregroundStyle(LuTheme.accent)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(item.text).fixedSize(horizontal: false, vertical: true)
+                                if let urlString = item.url, let url = URL(string: urlString) {
+                                    Button {
+                                        NSWorkspace.shared.open(url)
+                                    } label: {
+                                        Label(item.button ?? "Öffnen", systemImage: "arrow.up.right.square")
+                                    }
+                                    .controlSize(.small)
+                                }
+                            }
                         }
+                    }
+                }
+
+                if provider.setup?.checkLocalPort != nil {
+                    HStack(spacing: 8) {
+                        switch bridgeRunning {
+                        case .some(true):
+                            Label("Bridge läuft", systemImage: "checkmark.circle.fill").foregroundStyle(LuTheme.success)
+                        case .some(false):
+                            Label("Bridge nicht gefunden – bitte starten", systemImage: "xmark.circle.fill").foregroundStyle(LuTheme.danger)
+                        case .none:
+                            ProgressView().controlSize(.small)
+                            Text("Prüfe Bridge …")
+                        }
+                        Button("Erneut prüfen", action: checkBridge).controlSize(.small)
+                    }
+                    .font(.callout)
+                }
+
+                if let servers {
+                    Label("Servereinstellungen gefunden: \(servers.imap.host) / \(servers.smtp.host)", systemImage: "wand.and.stars")
+                        .font(.callout)
+                        .foregroundStyle(LuTheme.textSecondary)
+                }
+
+                if oauthOnlyWithoutClient {
+                    Label("\(provider.name) erlaubt nur die Anmeldung über die eigene Anmeldeseite. Dafür muss in Lu-Mail einmalig eine Client-ID eingerichtet werden (docs/OAUTH-EINRICHTEN.md).",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(LuTheme.moon)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(LuTheme.danger)
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func checkBridge() {
+        guard let port = provider?.setup?.checkLocalPort else { return }
+        bridgeRunning = nil
+        Task { bridgeRunning = await LocalPortProbe.isOpen(port: port) }
+    }
+
+    // MARK: Warten & Fertig
+
+    private var waitingStep: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            ProgressView().controlSize(.large)
+            Text("Bitte im Browser fortfahren …").font(.title3.weight(.semibold))
+            Text(usesOAuth ? "Melde dich im geöffneten Browserfenster an und erlaube Lu-Mail den Zugriff."
+                           : "Gib im geöffneten Browserfenster dein \(provider?.passwordLabel ?? "Passwort") ein.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(LuTheme.textSecondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func doneStep(_ address: String) -> some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "checkmark.circle.fill").font(.system(size: 52)).foregroundStyle(LuTheme.success)
+            Text("\(address) wurde hinzugefügt").font(.title3.weight(.semibold))
+            Text("Dein Posteingang wird geladen.").foregroundStyle(LuTheme.textSecondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: Fußzeile (immer sichtbar)
+
+    private var footer: some View {
+        HStack {
+            switch step {
+            case .choose:
+                Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button {
+                    continueWithEmail()
+                } label: {
+                    if isDiscovering {
+                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Suche Einstellungen …") }
                     } else {
-                        Label("Im Browser anmelden", systemImage: "safari")
+                        Text("Weiter")
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedProvider == nil || isWaiting || !canSignIn)
+                .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || isDiscovering)
+            case .guide:
+                Button("Zurück") { step = .choose }
+                Spacer()
+                Button("Abbrechen") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(action: startSignIn) {
+                    Label(primaryTitle, systemImage: "safari")
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(oauthOnlyWithoutClient)
+            case .waiting:
+                Spacer()
+                Button("Abbrechen") { signInTask?.cancel() }.keyboardShortcut(.cancelAction)
+            case .done:
+                Spacer()
+                Button("Fertig") { dismiss() }.keyboardShortcut(.defaultAction)
             }
         }
-        .padding(24)
-        .frame(width: 680)
-        .background(LuTheme.surface)
-        .onDisappear { signInTask?.cancel() }
     }
 
-    @ViewBuilder
-    private func details(_ provider: Provider) -> some View {
-        let usesOAuth = model.auth.usesOAuth(provider)
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("E-Mail-Adresse (optional)", text: $emailHint)
-                .textFieldStyle(.roundedBorder)
-                .disabled(isWaiting)
-
-            if !provider.authMethods.contains(.password) && !usesOAuth {
-                Label("\(provider.name) erlaubt die Anmeldung nur über die eigene Anmeldeseite (OAuth). Trage dafür einmalig eine Client-ID in oauth.json ein.",
-                      systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(LuTheme.moon)
-                Button("oauth.json öffnen und Anleitung lesen …") { model.revealOAuthConfig() }
-                    .buttonStyle(.link)
-            } else if usesOAuth {
-                Label("Du wirst zur Anmeldeseite von \(provider.name) weitergeleitet. Lu-Mail sieht dein Passwort nie.",
-                      systemImage: "lock.shield")
-            } else {
-                Label("Im Browser öffnet sich eine Lu-Mail-Anmeldeseite (läuft lokal auf deinem Mac). Dort gibst du dein \(provider.passwordLabel) ein.",
-                      systemImage: "lock.shield")
-                if provider.needsCustomServers {
-                    Text("Auf der Anmeldeseite gibst du zusätzlich IMAP- und SMTP-Server ein.")
-                        .font(.callout)
-                        .foregroundStyle(LuTheme.textSecondary)
-                }
-                Text(provider.passwordHelp)
-                    .font(.callout)
-                    .foregroundStyle(LuTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 14) {
-                    if let url = URL(string: provider.helpUrl) {
-                        Link("Anleitung öffnen ↗", destination: url)
-                    }
-                    if provider.authMethods.contains(.oauth2) {
-                        Button("Direkte \(provider.name)-Anmeldung einrichten …") { model.revealOAuthConfig() }
-                            .buttonStyle(.link)
-                            .help("Trage in oauth.json eine eigene OAuth-Client-ID ein – siehe docs/ANMELDUNG.md")
-                    }
-                }
-                .font(.callout)
-            }
+    private var primaryTitle: String {
+        guard let provider, usesOAuth else { return "Im Browser anmelden" }
+        switch provider.id {
+        case "gmail": return "Mit Google anmelden"
+        case "outlook": return "Mit Microsoft anmelden"
+        default: return "Mit \(provider.name) anmelden"
         }
-        .font(.callout)
-        .foregroundStyle(LuTheme.textPrimary)
-    }
-
-    /// OAuth-only-Anbieter (Outlook) brauchen eine Client-ID in oauth.json.
-    private var canSignIn: Bool {
-        guard let provider = selectedProvider else { return false }
-        return provider.authMethods.contains(.password) || model.auth.usesOAuth(provider)
     }
 
     private func startSignIn() {
-        guard let provider = selectedProvider else { return }
+        guard let provider else { return }
         errorMessage = nil
-        isWaiting = true
+        step = .waiting
+        let hint = email.trimmingCharacters(in: .whitespaces)
         signInTask = Task {
             do {
-                try await model.addAccount(provider: provider, emailHint: emailHint)
-                isWaiting = false
+                try await model.addAccount(provider: provider, emailHint: hint, serversHint: servers)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                step = .done(model.accounts.last?.email ?? hint)
+                try? await Task.sleep(for: .seconds(1.5))
                 dismiss()
             } catch is CancellationError {
-                isWaiting = false
+                step = .guide
             } catch {
-                isWaiting = false
-                errorMessage = AuthService.friendlyLoginError(error, provider: provider)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                errorMessage = AuthService.friendlyLoginError(error, provider: provider) + " Klicke erneut auf „\(primaryTitle)“, um es noch einmal zu versuchen."
+                step = .guide
             }
-            // Lu-Mail wieder nach vorne holen, nachdem der Browser fertig ist.
-            NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }
 }
 
+/// Kompakte Anbieter-Kachel (alle 10 passen ohne Scrollen).
 struct ProviderTile: View {
     let provider: Provider
-    let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Text(String(provider.name.prefix(1)))
-                    .font(.title3.weight(.bold))
+                    .font(.headline)
                     .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(RoundedRectangle(cornerRadius: LuTheme.radiusMedium).fill(LuTheme.provider(provider.id).gradient))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(provider.name).font(.headline).foregroundStyle(LuTheme.textPrimary)
-                    Text(provider.domains.isEmpty ? "eigene Domain" : provider.domains.prefix(2).joined(separator: ", "))
-                        .font(.caption)
-                        .foregroundStyle(LuTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(LuTheme.accent)
-                }
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(LuTheme.provider(provider.id).gradient))
+                Text(provider.name).font(.callout.weight(.medium)).lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: LuTheme.radiusLarge).fill(isSelected ? LuTheme.surfaceSelected : LuTheme.background))
-            .overlay(RoundedRectangle(cornerRadius: LuTheme.radiusLarge)
-                .stroke(isSelected ? LuTheme.accent : LuTheme.border, lineWidth: isSelected ? 2 : 1))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: LuTheme.radiusMedium).fill(LuTheme.background))
+            .overlay(RoundedRectangle(cornerRadius: LuTheme.radiusMedium).stroke(LuTheme.border))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Prüft, ob ein lokaler Dienst (z. B. die Proton Mail Bridge) erreichbar ist.
+enum LocalPortProbe {
+    static func isOpen(port: Int, timeout: TimeInterval = 1.5) async -> Bool {
+        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return false }
+        let connection = NWConnection(host: "127.0.0.1", port: nwPort, using: .tcp)
+        let once = ResumeOnce()
+        return await withCheckedContinuation { continuation in
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    once.run { continuation.resume(returning: true) }
+                    connection.cancel()
+                case .failed, .waiting:
+                    once.run { continuation.resume(returning: false) }
+                    connection.cancel()
+                default:
+                    break
+                }
+            }
+            connection.start(queue: .global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                once.run { continuation.resume(returning: false) }
+                connection.cancel()
+            }
+        }
     }
 }

@@ -18,7 +18,7 @@ final class AuthService: @unchecked Sendable {
     /// Eigene OAuth-Client-Daten aus `oauth.json` (bei jedem Aufruf frisch gelesen).
     func oauthCredentials(for provider: Provider) -> OAuthClientCredentials? {
         guard provider.authMethods.contains(.oauth2), provider.oauth != nil else { return nil }
-        return OAuthClientCredentials.load(from: paths.oauthFile)[provider.id]
+        return OAuthClientCredentials.resolve(userFile: paths.oauthFile)[provider.id]
     }
 
     func usesOAuth(_ provider: Provider) -> Bool {
@@ -28,7 +28,7 @@ final class AuthService: @unchecked Sendable {
     // MARK: Anmeldung
 
     /// Öffnet den Browser und liefert das neue Konto, sobald die Anmeldung dort abgeschlossen ist.
-    func signIn(provider: Provider, emailHint: String?) async throws -> Account {
+    func signIn(provider: Provider, emailHint: String?, serversHint: CustomServers? = nil) async throws -> Account {
         if let credentials = oauthCredentials(for: provider), let endpoints = provider.oauth {
             return try await signInWithOAuth(provider: provider, endpoints: endpoints, credentials: credentials, emailHint: emailHint)
         }
@@ -36,7 +36,7 @@ final class AuthService: @unchecked Sendable {
             // z. B. Outlook: nur OAuth möglich, aber keine Client-ID eingetragen.
             throw OAuthError.notConfigured(provider.name)
         }
-        return try await signInWithPassword(provider: provider, emailHint: emailHint)
+        return try await signInWithPassword(provider: provider, emailHint: emailHint, serversHint: serversHint)
     }
 
     private func signInWithOAuth(provider: Provider, endpoints: OAuthEndpoints, credentials: OAuthClientCredentials,
@@ -62,11 +62,11 @@ final class AuthService: @unchecked Sendable {
         return account
     }
 
-    private func signInWithPassword(provider: Provider, emailHint: String?) async throws -> Account {
+    private func signInWithPassword(provider: Provider, emailHint: String?, serversHint: CustomServers?) async throws -> Account {
         let server = try await LoopbackServer.start()
         defer { server.stop() }
         let transports = transports
-        let router = BrowserLoginRouter(mode: .password(provider, emailHint: emailHint), port: server.port) { credentials in
+        let router = BrowserLoginRouter(mode: .password(provider, emailHint: emailHint, serversHint: serversHint), port: server.port) { credentials in
             do {
                 try await MailAccountSession.verify(provider: provider, endpoint: credentials.servers?.imap,
                                                     credential: .password(user: credentials.email, password: credentials.password),
@@ -128,7 +128,7 @@ final class AuthService: @unchecked Sendable {
             if let running = refreshTasks[account.id] { return running }
             let task = Task { [oauthService, paths] () throws -> OAuthTokens in
                 guard let endpoints = provider.oauth,
-                      let credentials = OAuthClientCredentials.load(from: paths.oauthFile)[provider.id] else {
+                      let credentials = OAuthClientCredentials.resolve(userFile: paths.oauthFile)[provider.id] else {
                     throw OAuthError.notConfigured(provider.name)
                 }
                 let fresh = try await oauthService.refresh(endpoints: endpoints, credentials: credentials, tokens: current)

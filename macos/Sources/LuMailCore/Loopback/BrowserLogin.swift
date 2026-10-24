@@ -170,8 +170,8 @@ public actor BrowserLoginRouter {
     public enum Mode: Sendable {
         /// OAuth: wartet auf `GET /callback?code&state`.
         case oauth
-        /// Passwort: zeigt `GET /login/<state>` und nimmt `POST /login` an.
-        case password(Provider, emailHint: String?)
+        /// Passwort: zeigt `GET /login/<state>` und nimmt `POST /login` an (Server ggf. vorausgefüllt).
+        case password(Provider, emailHint: String?, serversHint: CustomServers? = nil)
     }
 
     /// Prüft Zugangsdaten (IMAP-LOGIN) und liefert bei Fehler eine Meldung für die Seite.
@@ -235,10 +235,10 @@ public actor BrowserLoginRouter {
                 title: "Angemeldet!", message: "Du kannst dieses Fenster schließen und zu Lu-Mail zurückkehren.")),
                           outcome: .success(.authorizationCode(code)))
 
-        case .password(let provider, let emailHint):
+        case .password(let provider, let emailHint, let serversHint):
             if request.method == "GET", request.path == "/login/\(state)" {
                 return Result(response: HTTPResponse(status: 200, body: LoginPages.login(
-                    provider: provider, state: state, email: emailHint, error: nil)), outcome: nil)
+                    provider: provider, state: state, email: emailHint, error: nil, servers: serversHint)), outcome: nil)
             }
             guard request.path == "/login" else { return notFound }
             guard request.method == "POST" else {

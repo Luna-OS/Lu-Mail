@@ -51,7 +51,36 @@ public enum SharedResources {
       "helpUrl": "https://myaccount.google.com/apppasswords",
       "allowInsecureLoopbackCertificate": false,
       "saveSentViaImap": false,
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "google.com",
+        "googlemail.com"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "2-Schritt-Bestätigung in deinem Google-Konto aktivieren (falls noch nicht geschehen).",
+            "url": "https://myaccount.google.com/signinoptions/twosv",
+            "button": "Öffnen"
+          },
+          {
+            "text": "Ein App-Passwort für „Lu-Mail“ erstellen und kopieren.",
+            "url": "https://myaccount.google.com/apppasswords",
+            "button": "App-Passwort erstellen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken und das App-Passwort einfügen."
+          }
+        ],
+        "oauthSteps": [
+          {
+            "text": "Auf „Mit Google anmelden“ klicken und im Browser dein Google-Konto wählen."
+          },
+          {
+            "text": "Lu-Mail den Zugriff erlauben – fertig."
+          }
+        ]
+      }
     },
     {
       "serverCategories": "none",
@@ -100,9 +129,29 @@ public enum SharedResources {
         "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
       },
       "passwordLabel": "Passwort",
-      "passwordHelp": "Microsoft erlaubt für Outlook.com nur noch die Anmeldung über die Microsoft-Seite (OAuth). Trage dafür eine eigene Client-ID in oauth.json ein – siehe docs/ANMELDUNG.md.",
+      "passwordHelp": "Microsoft erlaubt für Outlook.com nur noch die Anmeldung über die Microsoft-Seite (OAuth). Dafür muss Lu-Mail einmalig eine Microsoft-Client-ID bekommen – siehe docs/OAUTH-EINRICHTEN.md.",
       "helpUrl": "https://support.microsoft.com/de-de/office/pop-imap-und-smtp-einstellungen-f%C3%BCr-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040",
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "protection.outlook.com",
+        "outlook.com",
+        "hotmail.com"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Auf „Mit Microsoft anmelden“ klicken und im Browser zustimmen."
+          }
+        ],
+        "oauthSteps": [
+          {
+            "text": "Auf „Mit Microsoft anmelden“ klicken und im Browser dein Microsoft-Konto wählen."
+          },
+          {
+            "text": "Lu-Mail den Zugriff erlauben – fertig."
+          }
+        ]
+      }
     },
     {
       "serverCategories": "none",
@@ -132,7 +181,23 @@ public enum SharedResources {
       "passwordLabel": "App-spezifisches Passwort",
       "passwordHelp": "iCloud verlangt für E-Mail-Programme ein app-spezifisches Passwort. Erstelle es auf account.apple.com unter „Anmelden und Sicherheit → App-spezifische Passwörter“ (2-Faktor-Authentifizierung muss aktiv sein).",
       "helpUrl": "https://support.apple.com/de-de/102654",
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "icloud.com",
+        "mail.me.com"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Auf account.apple.com unter „Anmelden und Sicherheit“ ein app-spezifisches Passwort erstellen.",
+            "url": "https://account.apple.com/account/manage",
+            "button": "Apple-Account öffnen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken und das Passwort einfügen."
+          }
+        ]
+      }
     },
     {
       "id": "proton",
@@ -163,7 +228,27 @@ public enum SharedResources {
       "helpUrl": "https://proton.me/mail/bridge",
       "allowInsecureLoopbackCertificate": true,
       "saveSentViaImap": false,
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "protonmail.ch",
+        "proton.me"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Proton Mail Bridge installieren und mit deinem Proton-Konto anmelden (ab Tarif „Mail Plus“).",
+            "url": "https://proton.me/mail/bridge",
+            "button": "Bridge herunterladen"
+          },
+          {
+            "text": "In der Bridge unter Einstellungen → Erweitert → Verbindungsmodus IMAP und SMTP auf „SSL“ stellen."
+          },
+          {
+            "text": "In der Bridge das Bridge-Passwort kopieren und auf „Im Browser anmelden“ klicken."
+          }
+        ],
+        "checkLocalPort": 1143
+      }
     },
     {
       "id": "mailru",
@@ -212,7 +297,27 @@ public enum SharedResources {
       "helpUrl": "https://account.mail.ru/user/2-step-auth/passwords/",
       "allowInsecureLoopbackCertificate": false,
       "saveSentViaImap": false,
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "mail.ru"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "In den Mail.ru-Sicherheitseinstellungen ein „Passwort für externe Anwendungen“ erstellen.",
+            "url": "https://account.mail.ru/user/2-step-auth/passwords/",
+            "button": "Mail.ru öffnen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken und das Passwort einfügen."
+          }
+        ],
+        "oauthSteps": [
+          {
+            "text": "Auf „Mit Mail.ru anmelden“ klicken und im Browser zustimmen."
+          }
+        ]
+      }
     },
     {
       "serverCategories": "none",
@@ -245,7 +350,28 @@ public enum SharedResources {
       "passwordLabel": "App-Passwort",
       "passwordHelp": "Yandex verlangt für E-Mail-Programme ein App-Passwort (Typ „Mail“). Erstelle es in deinem Yandex-ID-Konto unter Sicherheit → App-Passwörter und erlaube in den Mail-Einstellungen den Zugriff per IMAP.",
       "helpUrl": "https://id.yandex.com/security/app-passwords",
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "yandex.net",
+        "yandex.ru"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Im Yandex-ID-Konto ein App-Passwort vom Typ „Mail“ erstellen.",
+            "url": "https://id.yandex.com/security/app-passwords",
+            "button": "Yandex öffnen"
+          },
+          {
+            "text": "In den Mail-Einstellungen den Zugriff per IMAP erlauben.",
+            "url": "https://mail.yandex.com/#setup/client",
+            "button": "Einstellungen öffnen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken."
+          }
+        ]
+      }
     },
     {
       "serverCategories": "none",
@@ -277,7 +403,23 @@ public enum SharedResources {
       "passwordLabel": "GMX-Passwort",
       "passwordHelp": "Aktiviere zuerst im GMX-Postfach unter Einstellungen → POP3/IMAP Abruf den Zugriff per IMAP. Danach meldest du dich mit E-Mail-Adresse und GMX-Passwort an (bei 2-Faktor-Schutz mit einem anwendungsspezifischen Passwort).",
       "helpUrl": "https://hilfe.gmx.net/pop-imap/imap/imap-serverdaten.html",
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "gmx.net",
+        "gmx.de"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Im GMX-Postfach unter Einstellungen → POP3/IMAP Abruf den IMAP-Zugriff aktivieren.",
+            "url": "https://www.gmx.net/",
+            "button": "GMX öffnen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken und dein GMX-Passwort eingeben."
+          }
+        ]
+      }
     },
     {
       "serverCategories": "none",
@@ -305,7 +447,22 @@ public enum SharedResources {
       "passwordLabel": "WEB.DE-Passwort",
       "passwordHelp": "Aktiviere zuerst im WEB.DE-Postfach unter Einstellungen → POP3/IMAP Abruf den Zugriff per IMAP. Danach meldest du dich mit E-Mail-Adresse und WEB.DE-Passwort an (bei 2-Faktor-Schutz mit einem anwendungsspezifischen Passwort).",
       "helpUrl": "https://hilfe.web.de/pop-imap/imap/imap-serverdaten.html",
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "web.de"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Im WEB.DE-Postfach unter Einstellungen → POP3/IMAP Abruf den IMAP-Zugriff aktivieren.",
+            "url": "https://web.de/",
+            "button": "WEB.DE öffnen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken und dein WEB.DE-Passwort eingeben."
+          }
+        ]
+      }
     },
     {
       "id": "hostinger",
@@ -331,7 +488,24 @@ public enum SharedResources {
       "helpUrl": "https://hpanel.hostinger.com/emails",
       "allowInsecureLoopbackCertificate": false,
       "saveSentViaImap": true,
-      "customServers": false
+      "customServers": false,
+      "mxSuffixes": [
+        "hostinger.com",
+        "hostinger.io",
+        "titan.email"
+      ],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "E-Mail-Adresse und Postfach-Passwort bereithalten (vergessen? im hPanel neu setzen).",
+            "url": "https://hpanel.hostinger.com/emails",
+            "button": "hPanel öffnen"
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken."
+          }
+        ]
+      }
     },
     {
       "serverCategories": "none",
@@ -357,7 +531,18 @@ public enum SharedResources {
       "passwordLabel": "Passwort",
       "passwordHelp": "Für jeden anderen Anbieter mit IMAP und SMTP. Die Serverdaten findest du in der Hilfe deines Anbieters.",
       "helpUrl": "https://github.com/Luna-OS/Lu-Mail/blob/main/docs/ANMELDUNG.md#andere-imap",
-      "customServers": true
+      "customServers": true,
+      "mxSuffixes": [],
+      "setup": {
+        "passwordSteps": [
+          {
+            "text": "Lu-Mail sucht die Servereinstellungen automatisch. Auf der Anmeldeseite kannst du sie prüfen und ändern."
+          },
+          {
+            "text": "Auf „Im Browser anmelden“ klicken und dein Passwort eingeben."
+          }
+        ]
+      }
     }
   ],
   "folderRoles": {
@@ -438,6 +623,15 @@ public enum SharedResources {
         "[Gmail]/Alle Nachrichten"
       ]
     }
+  },
+  "discovery": {
+    "mxLookup": "https://cloudflare-dns.com/dns-query?name={domain}&type=MX",
+    "autoconfig": [
+      "https://autoconfig.{domain}/mail/config-v1.1.xml?emailaddress={email}",
+      "https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress={email}",
+      "https://autoconfig.thunderbird.net/v1.1/{domain}"
+    ],
+    "timeoutSeconds": 6
   }
 }
 """##
