@@ -13,7 +13,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 230, ideal: 280, max: 360)
         } detail: {
             if case .web(let accountId, let folder) = model.selection, let account = model.account(id: accountId) {
-                WebMailView(account: account, folder: folder)
+                WebAccountView(account: account, folder: folder)
             } else {
                 HSplitView {
                     MessageListView()

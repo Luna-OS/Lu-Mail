@@ -23,6 +23,7 @@ FILES = {
     "trackersJSON": "shared/trackers.json",
     "phishingJSON": "shared/phishing.json",
     "customServersHTML": "shared/login/custom-servers.html",
+    "webmailJS": "shared/webmail/lu-webmail.js",
 }
 
 

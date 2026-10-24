@@ -79,6 +79,7 @@
       "web": {
         "loginUrl": "https://accounts.google.com/ServiceLogin?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2Fu%2F0%2F",
         "homeUrl": "https://mail.google.com/mail/u/0/#inbox",
+        "reader": "gmail",
         "loggedInPrefixes": [
           "https://mail.google.com/mail/"
         ],
@@ -94,6 +95,7 @@
           "trash": "https://mail.google.com/mail/u/0/#trash",
           "archive": "https://mail.google.com/mail/u/0/#all"
         },
+        "composeUrl": "https://mail.google.com/mail/u/0/#inbox?compose=new",
         "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
@@ -182,6 +184,7 @@
           "trash": "https://outlook.live.com/mail/0/deleteditems",
           "archive": "https://outlook.live.com/mail/0/archive"
         },
+        "composeUrl": "https://outlook.live.com/mail/0/deeplink/compose",
         "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
@@ -295,6 +298,7 @@
       "web": {
         "loginUrl": "https://account.proton.me/mail",
         "homeUrl": "https://mail.proton.me/u/0/inbox",
+        "reader": "proton",
         "loggedInPrefixes": [
           "https://mail.proton.me/"
         ],
@@ -381,6 +385,7 @@
       "web": {
         "loginUrl": "https://account.mail.ru/login?page=https%3A%2F%2Fe.mail.ru%2Finbox%2F",
         "homeUrl": "https://e.mail.ru/inbox/",
+        "reader": "mailru",
         "loggedInPrefixes": [
           "https://e.mail.ru/"
         ],
@@ -391,6 +396,7 @@
           "spam": "https://e.mail.ru/spam/",
           "trash": "https://e.mail.ru/trash/"
         },
+        "composeUrl": "https://e.mail.ru/compose/",
         "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },
@@ -462,6 +468,7 @@
           "spam": "https://mail.yandex.com/#spam",
           "trash": "https://mail.yandex.com/#trash"
         },
+        "composeUrl": "https://mail.yandex.com/#compose",
         "unreadTitlePattern": "\\((\\d+)\\)"
       }
     },

@@ -91,3 +91,40 @@ final class WebAccountTests: XCTestCase {
         XCTAssertEqual(decoded.label, "Gmail")
     }
 }
+
+final class WebReaderTests: XCTestCase {
+    func testReaderConfigured() {
+        let catalog = ProviderCatalog.shared
+        XCTAssertEqual(catalog.provider(id: "gmail")?.web?.reader, "gmail")
+        XCTAssertEqual(catalog.provider(id: "proton")?.web?.reader, "proton")
+        XCTAssertEqual(catalog.provider(id: "mailru")?.web?.reader, "mailru")
+        XCTAssertNil(catalog.provider(id: "outlook")?.web?.reader)
+        XCTAssertTrue(SharedResources.webmailJS.contains("window.LuWebmail"))
+    }
+
+    func testDecodeList() throws {
+        let json = #"{"state":"ok","items":[{"id":"18abc","from":"Anna","fromEmail":"anna@example.com","subject":"Hallo","snippet":"Hi","date":"08:01","dateTitle":"Sa.","unread":true,"attachment":false},{"id":"x"}]}"#
+        let result = try XCTUnwrap(WebReader.decode(WebReader.ListResult.self, from: json))
+        XCTAssertEqual(result.state, .ok)
+        XCTAssertEqual(result.items.count, 2)
+        XCTAssertEqual(result.items[0].sender, "Anna")
+        XCTAssertTrue(result.items[0].unread)
+        XCTAssertEqual(result.items[1].sender, "(unbekannt)")
+        XCTAssertEqual(result.items[1].displaySubject, "(kein Betreff)")
+    }
+
+    func testDecodeStatesAndMessage() throws {
+        XCTAssertEqual(WebReader.decode(WebReader.ListResult.self, from: #"{"state":"login"}"#)?.state, .login)
+        XCTAssertEqual(WebReader.decode(WebReader.ListResult.self, from: #"{"state":"weird"}"#)?.state, .error)
+        XCTAssertNil(WebReader.decode(WebReader.ListResult.self, from: "kaputt"))
+        let message = try XCTUnwrap(WebReader.decode(WebReader.MessageResult.self,
+            from: #"{"state":"ok","subject":"S","parts":[{"from":"","fromEmail":"a@b.de","html":"<p>x</p>"}]}"#))
+        XCTAssertEqual(message.parts.first?.sender, "a@b.de")
+        XCTAssertEqual(message.parts.first?.html, "<p>x</p>")
+    }
+
+    func testScriptsQuoteSafely() {
+        XCTAssertEqual(WebReader.jsString(#"a"b\c</script>"#), #""a\"b\\c<\/script>""#)
+        XCTAssertTrue(WebReader.openScript(reader: "gmail", id: "18abc").hasSuffix(#";LuWebmail.open("gmail", "18abc")"#))
+    }
+}
