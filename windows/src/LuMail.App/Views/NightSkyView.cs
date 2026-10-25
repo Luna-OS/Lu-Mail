@@ -19,7 +19,7 @@ namespace LuMail.App.Views;
 /// Angehalten, solange <see cref="Shown"/> oder <see cref="WindowVisible"/> falsch ist; bei ausgeschalteten
 /// Windows-Animationen steht der Himmel still.
 /// </summary>
-public sealed class NightSkyView : Grid
+public sealed partial class NightSkyView : Grid
 {
     private static readonly IReadOnlyList<SkyStar> StarData = NightSky.Stars();
 
@@ -116,11 +116,15 @@ public sealed class NightSkyView : Grid
         BuildShootingStar();
 
         try { _animations = _ui.AnimationsEnabled; } catch (Exception) { _animations = true; }
-        _ui.AnimationsEnabledChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
         {
-            try { _animations = _ui.AnimationsEnabled; } catch (Exception) { }
-            Update();
-        });
+            // Kommt aus einem Hintergrund-Thread.
+            _ui.AnimationsEnabledChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
+            {
+                try { _animations = _ui.AnimationsEnabled; } catch (Exception) { }
+                Update();
+            });
+        }
         SizeChanged += (_, e) => Layout(e.NewSize.Width, e.NewSize.Height);
     }
 
