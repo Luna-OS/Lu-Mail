@@ -825,6 +825,7 @@ public class WebReaderTests
         Assert.EndsWith("\n;LuWebmail.open(\"gmail\", \"id\\u0022\\u0027);alert(1)//\\n\")", s);
         Assert.EndsWith(";LuWebmail.list(\"proton\")", WebReader.ListScript("proton"));
         Assert.EndsWith(";LuWebmail.message(\"mailru\")", WebReader.MessageScript("mailru"));
+        Assert.EndsWith(";LuWebmail.message(\"proton\", \"c1\")", WebReader.MessageScript("proton", "c1"));
     }
 
     [Fact]

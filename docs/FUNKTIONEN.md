@@ -174,6 +174,8 @@ GitHub-Secrets in die Apps ein: `LUMAIL_GOOGLE_CLIENT_ID`, `LUMAIL_GOOGLE_CLIENT
 - Einstellungen als eigenes, in der Größe veränderbares Fenster mit Seitenleiste (Allgemein, Darstellung, Konten,
   Regeln, Datenschutz, Updates) – keine abgeschnittenen Reiter.
 - „Neue E-Mail“ ohne Konto öffnet „Konto hinzufügen“.
+- Seitenleiste: Anbieter und Konten lassen sich auf- und zuklappen (Pfeil bzw. Klick auf die Kopfzeile); der Zustand
+  wird pro Anbieter-ID und Konto-ID gemerkt. Zugeklappt zeigen sie die Zahl ungelesener Mails.
 - Hinweise nutzen die passende Art (Info/Erfolg/Warnung/Fehler), z. B. „Bitte zuerst ein Konto hinzufügen“ = Info.
 
 ## 20. Web-Konten (Anmeldung auf der Anbieter-Webseite)
@@ -261,7 +263,10 @@ in einer eigenen Content-World aus (`WKContentWorld.defaultClient`), Windows per
 2. Liste im Stil der IMAP-Liste: Absender (fett + Punkt wenn ungelesen), Betreff, Vorschau, Datum (Text aus dem
    Webmail), Büroklammer bei Anhang. Neu laden über den Button, beim Zurückkehren zum Ordner und jede Minute,
    solange die Ansicht offen ist.
-3. Nachricht wählen → `open`, dann alle 0,5 s `message` bis `ok` (max. 15 s). Der Lesebereich zeigt Betreff,
+3. Nachricht wählen → `open` (klickt den Eintrag auch in einer ausgeblendeten Liste an; fehlt er, öffnet der Leser
+   die Nachricht über die Adresse: Gmail `#<ordner>/<thread-id>`, Proton `/u/<n>/<ordner>/<ID>` per History-API),
+   dann alle 0,5 s `message(reader, id)` bis `ok` (max. 15 s) – mit der ID meldet der Leser „loading“, solange noch
+   eine andere Unterhaltung angezeigt wird. Der Lesebereich wird beim Wechsel sofort geleert. Der Lesebereich zeigt Betreff,
    pro Teil Absender, Empfänger, Datum und den Inhalt über dieselbe HTML-Aufbereitung wie IMAP-Mails
    (ohne JavaScript, externe Bilder blockiert mit „Externe Inhalte laden“). Der Eintrag gilt danach als gelesen
    (der Anbieter markiert ihn beim Öffnen selbst).

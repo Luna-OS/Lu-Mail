@@ -97,7 +97,9 @@ public static class WebReader
 
     public static string ListScript(string reader) => Script($"LuWebmail.list({JsString(reader)})");
     public static string OpenScript(string reader, string id) => Script($"LuWebmail.open({JsString(reader)}, {JsString(id)})");
-    public static string MessageScript(string reader) => Script($"LuWebmail.message({JsString(reader)})");
+    /// <summary>Mit <paramref name="id"/>: „loading“, solange das Webmail noch eine andere Nachricht anzeigt.</summary>
+    public static string MessageScript(string reader, string? id = null) =>
+        Script(id is null ? $"LuWebmail.message({JsString(reader)})" : $"LuWebmail.message({JsString(reader)}, {JsString(id)})");
 
     /// <summary>
     /// Ergebnis von <c>ExecuteScriptAsync</c> → JSON des Lesers. WebView2 liefert den String JSON-kodiert
@@ -209,7 +211,8 @@ public static class WebReader
         var t = timing ?? WebReaderTiming.Default;
         if (DecodeState(await execute(OpenScript(reader, id))) != WebReaderState.Ok) return null;
         var clock = Stopwatch.StartNew();
-        var script = MessageScript(reader);
+        // Mit ID: nach dem Klick zeigt das Webmail kurz noch die vorige Nachricht – die darf nicht gelesen werden.
+        var script = MessageScript(reader, id);
         while (clock.Elapsed < t.MessageTimeout)
         {
             ct.ThrowIfCancellationRequested();

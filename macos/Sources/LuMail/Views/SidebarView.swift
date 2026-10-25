@@ -4,7 +4,29 @@ import SwiftUI
 /// Übersicht → Anbieter → Konto → Kategorien und Ordner.
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
-    @State private var collapsedAccounts: Set<UUID> = []
+    /// Zugeklappte Konten und Anbieter – über Neustarts gemerkt (durch Kommas getrennte IDs).
+    @AppStorage("sidebarCollapsedAccounts") private var collapsedAccountsRaw = ""
+    @AppStorage("sidebarCollapsedProviders") private var collapsedProvidersRaw = ""
+
+    private var collapsedAccounts: Set<UUID> {
+        Set(collapsedAccountsRaw.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
+    }
+
+    private var collapsedProviders: Set<String> {
+        Set(collapsedProvidersRaw.split(separator: ",").map(String.init))
+    }
+
+    private func setAccount(_ id: UUID, collapsed: Bool) {
+        var set = collapsedAccounts
+        if collapsed { set.insert(id) } else { set.remove(id) }
+        collapsedAccountsRaw = set.map(\.uuidString).sorted().joined(separator: ",")
+    }
+
+    private func setProvider(_ id: String, collapsed: Bool) {
+        var set = collapsedProviders
+        if collapsed { set.insert(id) } else { set.remove(id) }
+        collapsedProvidersRaw = set.sorted().joined(separator: ",")
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -27,7 +49,10 @@ struct SidebarView: View {
             }
 
             ForEach(model.accountsByProvider, id: \.provider.id) { group in
-                Section {
+                let providerExpanded = Binding(
+                    get: { !collapsedProviders.contains(group.provider.id) },
+                    set: { setProvider(group.provider.id, collapsed: !$0) })
+                Section(isExpanded: providerExpanded) {
                     if group.accounts.count > 1 {
                         row("Alle \(group.provider.name)-Posteingänge", systemImage: "tray.2", item: .providerInbox(group.provider.id),
                             tint: LuTheme.provider(group.provider.id))
@@ -39,7 +64,15 @@ struct SidebarView: View {
                     HStack(spacing: 6) {
                         ProviderDot(providerId: group.provider.id)
                         Text(group.provider.name)
+                        Spacer(minLength: 4)
+                        // Zugeklappt: Ungelesene aller Konten dieses Anbieters.
+                        if collapsedProviders.contains(group.provider.id) {
+                            UnreadBadge(count: group.accounts.reduce(0) { $0 + model.unreadCount(account: $1) })
+                        }
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { providerExpanded.wrappedValue.toggle() }
+                    .help(collapsedProviders.contains(group.provider.id) ? "\(group.provider.name) aufklappen" : "\(group.provider.name) zuklappen")
                 }
             }
         }
@@ -70,9 +103,7 @@ struct SidebarView: View {
     private func accountSection(_ account: Account) -> some View {
         let expanded = Binding(
             get: { !collapsedAccounts.contains(account.id) },
-            set: { isExpanded in
-                if isExpanded { collapsedAccounts.remove(account.id) } else { collapsedAccounts.insert(account.id) }
-            })
+            set: { setAccount(account.id, collapsed: !$0) })
         DisclosureGroup(isExpanded: expanded) {
             if account.isWeb {
                 webFolders(account)

@@ -127,5 +127,7 @@ final class WebReaderTests: XCTestCase {
     func testScriptsQuoteSafely() {
         XCTAssertEqual(WebReader.jsString(#"a"b\c</script>"#), #""a\"b\\c<\/script>""#)
         XCTAssertTrue(WebReader.openScript(reader: "gmail", id: "18abc").hasSuffix(#";LuWebmail.open("gmail", "18abc")"#))
+        XCTAssertTrue(WebReader.messageScript(reader: "proton", id: "c1").hasSuffix(#";LuWebmail.message("proton", "c1")"#))
+        XCTAssertTrue(WebReader.messageScript(reader: "proton").hasSuffix(#";LuWebmail.message("proton")"#))
     }
 }
