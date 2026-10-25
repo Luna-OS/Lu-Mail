@@ -277,7 +277,16 @@
                     <TextBlock x:Name="WebAccountText" Grid.Column="3" Margin="10,0,0,0" VerticalAlignment="Center"
                                FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextSecondary}" TextTrimming="CharacterEllipsis" />
                 </Grid>
-                <InfoBar x:Name="WebInfoBar" Grid.Row="1" Margin="10,0,10,6" IsClosable="True" IsOpen="False" Severity="Informational" />
+                <StackPanel Grid.Row="1">
+                    <!-- §20 „IMAP zuerst“: Web-Konto eines Anbieters, bei dem das normale Passwort genügt (Hostinger) -->
+                    <InfoBar x:Name="ImapOfferBar" Margin="10,0,10,6" CloseButtonClick="OnImapOfferClosed" IsClosable="True"
+                             IsOpen="False" Severity="Informational">
+                        <InfoBar.ActionButton>
+                            <Button x:Name="ImapSwitchButton" Click="OnSwitchToImapClick" Content="Jetzt umstellen" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+                    <InfoBar x:Name="WebInfoBar" Margin="10,0,10,6" IsClosable="True" IsOpen="False" Severity="Informational" />
+                </StackPanel>
                 <Grid x:Name="WebHost" Grid.Row="2" />
             </Grid>
 

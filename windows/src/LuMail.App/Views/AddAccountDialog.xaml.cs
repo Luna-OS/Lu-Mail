@@ -317,6 +317,9 @@ public sealed partial class AddAccountDialog : ContentDialog
         try
         {
             AddedAccount = await _s.Setup.AddAccountAsync(provider, EmailLooksValid ? Email : null, _cts.Token, _servers);
+            // Gab es dieselbe Adresse schon als Web-Konto, ersetzt das IMAP-Konto es (kein doppelter Eintrag,
+            // Cookies des Web-Kontos werden gelöscht).
+            if (App.Web.FindWebTwin(AddedAccount) is { } twin) await App.Web.ReplaceWithImapAsync(twin, AddedAccount);
             SuccessText.Text = $"✓ {AddedAccount.Email} wurde hinzugefügt";
             ShowStep(Step.Success);
             await Task.Delay(1500);
@@ -330,9 +333,7 @@ public sealed partial class AddAccountDialog : ContentDialog
         {
             HintBar.Severity = InfoBarSeverity.Error;
             HintBar.Title = "Anmeldung fehlgeschlagen";
-            HintBar.Message = ex is TimeoutException
-                ? "Die Anmeldung im Browser wurde nicht rechtzeitig abgeschlossen. Bitte versuche es erneut."
-                : ex.Message;
+            HintBar.Message = Dialogs.LoginErrorText(ex);
             HintBar.IsOpen = true;
             ShowStep(Step.Provider, retry: true);
         }

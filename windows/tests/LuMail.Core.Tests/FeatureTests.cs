@@ -813,6 +813,50 @@ public class WebAccountSetupTests
     }
 }
 
+public class WebToImapSwitchTests
+{
+    [Fact]
+    public async Task ImapAccount_NeverReusesWebAccount_AndReplacementRemovesWeb()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lumail-switch-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var secrets = new InMemorySecretStore();
+            var store = new AccountStore(Path.Combine(dir, "accounts.json"));
+            var tokens = new LuMail.Core.Auth.OAuthTokenManager(new LuMail.Core.Auth.OAuthClient(new HttpClient()), secrets, () => LuMail.Core.Auth.OAuthClientConfig.Empty);
+            var mail = new MailService(ProviderCatalog.LoadEmbedded(), CategoryCatalog.LoadEmbedded(), new StoredCredentialSource(secrets, tokens));
+            var setup = new AccountSetupService(new BrowserLoginService(_ => { }, new LuMail.Core.Auth.OAuthClient(new HttpClient())),
+                mail, store, secrets, tokens, () => LuMail.Core.Auth.OAuthClientConfig.Empty);
+            var hostinger = ProviderCatalog.LoadEmbedded().Get("hostinger");
+            var web = setup.AddWebAccount(hostinger, "WEB-1", "social@lunaos.fr");
+
+            // Gleiche Adresse per IMAP → eigenes Konto (neue Id), das Web-Konto bleibt unverändert.
+            var imap = setup.FindOrCreate(hostinger, "Social@LunaOS.fr", null, Account.AuthPassword);
+            Assert.NotEqual(web.Id, imap.Id);
+            Assert.Equal(Account.AuthPassword, imap.AuthMethod);
+            Assert.True(store.Load().Single(a => a.Id == web.Id).IsWeb);
+            store.Upsert(imap);
+
+            // Erneute IMAP-Anmeldung → dasselbe IMAP-Konto
+            Assert.Equal(imap.Id, setup.FindOrCreate(hostinger, "social@lunaos.fr", null, Account.AuthPassword).Id);
+
+            var removed = new List<string>();
+            setup.AccountRemoved += (_, a) => removed.Add(a.Id);
+            await Assert.ThrowsAsync<ArgumentException>(() => setup.ReplaceWebAccountAsync(imap, web)); // falsche Richtung
+            await Assert.ThrowsAsync<ArgumentException>(() => setup.ReplaceWebAccountAsync(web, web));
+            await setup.ReplaceWebAccountAsync(web, imap);
+            Assert.Equal(new[] { web.Id }, removed);
+            var left = store.Load();
+            Assert.Equal(imap.Id, Assert.Single(left).Id);
+            Assert.False(left[0].IsWeb);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch (IOException) { }
+        }
+    }
+}
+
 public class WebReaderTests
 {
     private static readonly ProviderCatalog Catalog = ProviderCatalog.LoadEmbedded();

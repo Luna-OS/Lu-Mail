@@ -319,8 +319,7 @@ final class AppModel {
         guard account.isWeb, let provider = provider(for: account) else { return }
         do {
             try await addAccount(provider: provider, emailHint: account.email.isEmpty ? nil : account.email)
-            // addAccount ersetzt ein Konto mit gleicher Adresse ohne dessen Speicher zu löschen – hier ausdrücklich.
-            webMail.discard(account.id)
+            // Gleiche Adresse: addAccount hat das Web-Konto samt Webseiten-Daten schon ersetzt. Andere Adresse: hier.
             if accounts.contains(where: { $0.id == account.id }) { removeAccount(account) }
             banner = "\(provider.name) läuft jetzt direkt in Lu-Mail."
         } catch is CancellationError {
@@ -361,8 +360,9 @@ final class AppModel {
         var account = try await auth.signIn(provider: provider, emailHint: hint?.isEmpty == true ? nil : hint, serversHint: serversHint)
         if let existing = accounts.first(where: { $0.email.caseInsensitiveCompare(account.email) == .orderedSame && $0.providerId == account.providerId }) {
             // Erneute Anmeldung: altes Konto ersetzen (z. B. abgelaufenes Token), Signatur behalten.
+            // Ein Web-Konto, das jetzt per IMAP angemeldet wird, ganz entfernen (Webseiten-Daten, Cookies).
             account.signature = existing.signature
-            removeAccount(existing, forgetSecrets: false)
+            removeAccount(existing, forgetSecrets: existing.isWeb && !account.isWeb && existing.id != account.id)
         }
         accounts.append(account)
         saveAccounts()

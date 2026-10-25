@@ -6,6 +6,11 @@ namespace LuMail.App.Views;
 /// <summary>Kleine, im Code gebaute Dialoge (Datum/Uhrzeit, Rückfrage).</summary>
 public static class Dialogs
 {
+    /// <summary>Verständliche Meldung für eine fehlgeschlagene Anmeldung im Browser.</summary>
+    public static string LoginErrorText(Exception ex) => ex is TimeoutException
+        ? "Die Anmeldung im Browser wurde nicht rechtzeitig abgeschlossen. Bitte versuche es erneut."
+        : ex.Message;
+
     /// <summary>Datum und Uhrzeit wählen (Später erinnern / Später senden). Null = abgebrochen.</summary>
     public static async Task<DateTimeOffset?> PickDateTimeAsync(XamlRoot root, string title, DateTimeOffset initial)
     {

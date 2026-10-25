@@ -1096,6 +1096,7 @@ public sealed partial class MainPage : Page
             _webListTimer?.Stop();
             App.Web.HideAll();
             WebInfoBar.IsOpen = false;
+            UpdateImapOffer(null);
             SetWebsiteMode(false);
             WebsiteButton.Visibility = Visibility.Collapsed;
             ConversationToggle.Visibility = Visibility.Visible;
@@ -1114,6 +1115,7 @@ public sealed partial class MainPage : Page
         _webLuActive = true;
         // Webseite bleibt in voller Größe geladen dahinter (rendert weiter), unsichtbar und ohne Eingaben.
         SetWebsiteMode(false);
+        UpdateImapOffer(null);
         ListPane.Visibility = Visibility.Visible;
         ReaderPane.Visibility = Visibility.Visible;
         WebsiteButton.Visibility = Visibility.Visible;
@@ -1138,6 +1140,7 @@ public sealed partial class MainPage : Page
     private async Task ShowWebsiteAsync(Account account, string folderKey, bool navigate)
     {
         CancelWebLoads();
+        UpdateImapOffer(account);
         _webLuActive = false;
         _webListTimer?.Stop();
         SetWebsiteMode(true);
@@ -1331,6 +1334,7 @@ public sealed partial class MainPage : Page
             _ = previous;
         }
         CancelWebLoads();
+        UpdateImapOffer(account);
         _webLuActive = false;
         _webListTimer?.Stop();
         SetWebsiteMode(true);
@@ -1350,6 +1354,111 @@ public sealed partial class MainPage : Page
         }
         WebInfoBar.Message = "Schreibe direkt im Postfach (Verfassen).";
         WebInfoBar.IsOpen = true;
+    }
+
+    // ------------------------------------------- §20 „IMAP zuerst“: Web-Konto auf IMAP umstellen
+
+    private readonly HashSet<string> _imapOfferDismissed = new();
+    private CancellationTokenSource? _imapSwitchCts;
+    private string? _imapSwitchAccountId;
+
+    /// <summary>Hinweis „geht auch direkt in Lu-Mail“ in der Webseiten-Ansicht eines Web-Kontos, dessen Anbieter IMAP bevorzugt.</summary>
+    private void UpdateImapOffer(Account? account)
+    {
+        var provider = account is { IsWeb: true } ? _s.Providers.Find(account.ProviderId) : null;
+        var show = provider is { PrefersImap: true, SupportsPassword: true } && !_imapOfferDismissed.Contains(account!.Id);
+        // Ansicht verlassen → laufende Umstellung abbrechen (nichts passiert im Hintergrund).
+        if (!show || _imapSwitchAccountId != account?.Id) _imapSwitchCts?.Cancel();
+        if (!show)
+        {
+            ImapOfferBar.IsOpen = false;
+            return;
+        }
+        if (_imapSwitchCts is null) ResetImapOffer(provider!);
+        ImapOfferBar.IsOpen = true;
+    }
+
+    private void ResetImapOffer(Provider provider)
+    {
+        ImapOfferBar.Severity = InfoBarSeverity.Informational;
+        ImapOfferBar.Title = "";
+        ImapOfferBar.Message = $"{provider.Name} geht auch direkt in Lu-Mail – mit deinem normalen Passwort.";
+        ImapSwitchButton.Content = "Jetzt umstellen";
+    }
+
+    private void OnImapOfferClosed(InfoBar sender, object args)
+    {
+        if (App.Web.ActiveAccount is { } account) _imapOfferDismissed.Add(account.Id); // für diese Sitzung
+        _imapSwitchCts?.Cancel();
+    }
+
+    /// <summary>
+    /// „Jetzt umstellen“: Passwort-Anmeldung im Browser (Adresse vorausgefüllt). Klappt sie, ersetzt das IMAP-Konto das
+    /// Web-Konto (Profil/Cookies gelöscht) und sein Posteingang wird gewählt. Während des Wartens: „Abbrechen“.
+    /// </summary>
+    private async void OnSwitchToImapClick(object sender, RoutedEventArgs e)
+    {
+        if (_imapSwitchCts is not null)
+        {
+            _imapSwitchCts.Cancel();
+            return;
+        }
+        if (Vm.Selected is not { Target: SidebarTarget.Web, Account: { IsWeb: true } web }
+            || _s.Providers.Find(web.ProviderId) is not { PrefersImap: true } provider) return;
+
+        var cts = _imapSwitchCts = new CancellationTokenSource();
+        _imapSwitchAccountId = web.Id;
+        ImapOfferBar.Severity = InfoBarSeverity.Informational;
+        ImapOfferBar.Title = "";
+        ImapOfferBar.Message = $"Melde dich im geöffneten Browserfenster mit deinem normalen {provider.Name}-Passwort an …";
+        ImapSwitchButton.Content = "Abbrechen";
+        Account added;
+        try
+        {
+            added = await _s.Setup.AddAccountAsync(provider, web.Email.Contains('@') ? web.Email : null, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ImapOfferBar.IsOpen) ResetImapOffer(provider);
+            return;
+        }
+        catch (Exception ex)
+        {
+            ImapOfferBar.Severity = InfoBarSeverity.Error;
+            ImapOfferBar.Title = "Anmeldung fehlgeschlagen";
+            ImapOfferBar.Message = Dialogs.LoginErrorText(ex);
+            ImapSwitchButton.Content = "Erneut versuchen";
+            return;
+        }
+        finally
+        {
+            _imapSwitchCts = null;
+            _imapSwitchAccountId = null;
+            cts.Dispose();
+        }
+
+        try
+        {
+            ImapOfferBar.IsOpen = false;
+            await App.Web.ReplaceWithImapAsync(web, added);
+            _webFallback.Remove(web.Id);
+            Vm.LoadAccounts();
+            Vm.RebuildSidebar(force: true);
+            if (Vm.SidebarAll.FirstOrDefault(i => i.Account?.Id == added.Id && i.Target == SidebarTarget.Category) is { } inbox)
+            {
+                Vm.RevealInSidebar(inbox);
+                await Vm.SelectAsync(inbox);
+            }
+            UpdateListHeader();
+            ShowMessage($"{provider.Name} läuft jetzt direkt in Lu-Mail.", isError: false);
+            await App.Web.SyncAccountsAsync(Vm.WebAccounts);
+            await Vm.RefreshAllAsync();
+            UpdateListHeader();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Umstellen fehlgeschlagen: " + ex.Message, isError: true);
+        }
     }
 
     private void OnWebBackClick(object sender, RoutedEventArgs e) => App.Web.GoBack();

@@ -203,7 +203,9 @@ Postfach-Passwort, kein App-Passwort), ist IMAP der Standardweg im Assistenten; 
 „Stattdessen auf der Webseite anmelden“ bereit. Bestehende Web-Konten solcher Anbieter zeigen in der Webseiten-Ansicht
 den Hinweis „<Anbieter> geht auch direkt in Lu-Mail – mit deinem normalen Passwort.“ und den Button **„Jetzt
 umstellen“**: Passwort-Anmeldung im Browser mit vorausgefüllter Adresse; klappt sie, ersetzt das IMAP-Konto das
-Web-Konto (dessen Cookies werden gelöscht) und sein Posteingang wird ausgewählt.
+Web-Konto (dessen Cookies werden gelöscht) und sein Posteingang wird ausgewählt. Dasselbe gilt, wenn man im
+Assistenten eine Adresse per IMAP hinzufügt, die es beim selben Anbieter schon als Web-Konto gibt – kein doppelter
+Eintrag in der Seitenleiste.
 
 **Sitzungen**
 - Jedes Web-Konto hat einen **eigenen, dauerhaften Cookie-Speicher** (mehrere Gmail-Konten parallel möglich):
