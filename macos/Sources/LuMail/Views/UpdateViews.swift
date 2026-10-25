@@ -26,6 +26,17 @@ struct UpdateBar: View {
                 Button("Jetzt neu starten") { updates.installAndRelaunch() }
                     .buttonStyle(.borderedProminent)
             }
+        case .failed(let message):
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(LuTheme.danger)
+                Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Schließen") { updates.dismissFailure() }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(LuTheme.danger.opacity(0.10))
+            .overlay(alignment: .bottom) { Divider().overlay(LuTheme.border) }
         default:
             EmptyView()
         }

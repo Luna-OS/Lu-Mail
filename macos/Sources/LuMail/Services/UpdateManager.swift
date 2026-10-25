@@ -47,6 +47,8 @@ final class UpdateManager {
     private var stagedApp: URL?
     private var downloadedDMG: URL?
     private var loopTask: Task<Void, Never>?
+    /// Der Installer läuft schon (z. B. nach „Update“) – beim Beenden keinen zweiten starten.
+    private var installerLaunched = false
     /// Wird vor dem Neustart in die neue Version aufgerufen (z. B. um die Auswahl zu merken).
     var onBeforeRelaunch: (() -> Void)?
 
@@ -138,7 +140,9 @@ final class UpdateManager {
     var canReplaceItself: Bool {
         let bundle = Bundle.main.bundleURL
         let path = bundle.path
-        guard isAppBundle, !path.hasPrefix("/Volumes/"), !path.contains("/AppTranslocation/") else { return false }
+        // Disk-Images sind schreibgeschützt eingehängt; Apps auf anderen (beschreibbaren) Laufwerken dürfen sich aktualisieren.
+        let readOnly = (try? bundle.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+        guard isAppBundle, !readOnly, !path.contains("/AppTranslocation/") else { return false }
         let manager = FileManager.default
         return manager.isWritableFile(atPath: bundle.deletingLastPathComponent().path) && manager.isWritableFile(atPath: path)
     }
@@ -160,8 +164,13 @@ final class UpdateManager {
 
     /// Wird beim Beenden aufgerufen: liegt ein Update bereit, wird es still eingespielt (ohne Neustart).
     func installOnQuitIfReady() {
-        guard case .ready = state, canReplaceItself else { return }
+        guard case .ready = state, !installerLaunched, canReplaceItself else { return }
         _ = launchInstaller(relaunch: false)
+    }
+
+    /// Fehlermeldung in der Leiste wegklicken.
+    func dismissFailure() {
+        if case .failed = state { state = .idle }
     }
 
     // MARK: Installation
@@ -238,15 +247,25 @@ final class UpdateManager {
             state = .failed("Lu-Mail kann sich an diesem Ort nicht selbst aktualisieren. Das Disk-Image wurde geöffnet – bitte die App nach „Programme“ ziehen.")
             return false
         }
+        // Nur ein Installer zur Zeit (Sperre im Update-Ordner, veraltete Sperren nach 10 min verworfen). Die alte App
+        // wird erst gelöscht, wenn die neue vollständig kopiert ist; schlägt das Kopieren fehl, kommt sie zurück.
         let script = """
         #!/bin/bash
         PID="$1"; SRC="$2"; DST="$3"; RELAUNCH="$4"
+        LOCK="$(dirname "$0")/install.lock"
+        find "$LOCK" -maxdepth 0 -mmin +10 -exec rmdir {} \\; 2>/dev/null
+        mkdir "$LOCK" 2>/dev/null || exit 0
+        trap 'rmdir "$LOCK" 2>/dev/null' EXIT
         for _ in $(seq 1 300); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
-        rm -rf "$DST.lumail-old"
-        if mv "$DST" "$DST.lumail-old" && /usr/bin/ditto "$SRC" "$DST"; then
-          rm -rf "$DST.lumail-old"
-        else
-          rm -rf "$DST"; mv "$DST.lumail-old" "$DST"
+        [ -d "$SRC" ] || exit 0
+        OLD="$DST.lumail-old"
+        rm -rf "$OLD"
+        if mv "$DST" "$OLD"; then
+          if /usr/bin/ditto "$SRC" "$DST"; then
+            rm -rf "$OLD"
+          else
+            rm -rf "$DST"; mv "$OLD" "$DST"
+          fi
         fi
         /usr/bin/xattr -dr com.apple.quarantine "$DST" 2>/dev/null
         /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DST" >/dev/null 2>&1
@@ -265,6 +284,7 @@ final class UpdateManager {
             process.arguments = ["-c", "nohup /bin/bash \(quoted) >/dev/null 2>&1 &"]
             try process.run()
             process.waitUntilExit()
+            installerLaunched = true
             return true
         } catch {
             state = .failed("Update konnte nicht gestartet werden: \(error.localizedDescription)")

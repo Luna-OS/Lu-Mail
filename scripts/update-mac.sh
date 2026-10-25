@@ -23,6 +23,23 @@ main() {
     exit 1
   }
   info() { /usr/bin/plutil -extract "$2" raw -o - "$1/Contents/Info.plist" 2>/dev/null; }
+  # Liegt der Pfad auf einem schreibgeschützten Laufwerk (z. B. dem eingehängten Disk-Image)?
+  readonly_volume() {
+    local mnt
+    mnt="$(df -P "$1" 2>/dev/null | tail -n 1 | sed -E 's/^([^ ]+ +){5}//')"
+    [ -n "$mnt" ] && mount | grep -F " on $mnt (" | grep -q "read-only"
+  }
+  # Ist Version $1 neuer als $2? (X.Y.Z, Teile als Zahlen verglichen)
+  newer() {
+    local a b i
+    IFS=. read -r -a a <<<"$1"
+    IFS=. read -r -a b <<<"$2"
+    for i in 0 1 2; do
+      if [ "${a[i]:-0}" -gt "${b[i]:-0}" ]; then return 0; fi
+      if [ "${a[i]:-0}" -lt "${b[i]:-0}" ]; then return 1; fi
+    done
+    return 1
+  }
 
   [ "$(uname -s)" = Darwin ] || fail "das ist nur für macOS."
 
@@ -37,8 +54,12 @@ main() {
     done
   fi
   if [ -z "$app" ]; then
-    app="$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2>/dev/null |
-      grep -v '^/Volumes/' | grep '\.app$' | head -n 1 || true)"
+    while IFS= read -r candidate; do
+      case "$candidate" in *.app) ;; *) continue ;; esac
+      readonly_volume "$candidate" && continue
+      app="$candidate"
+      break
+    done < <(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2>/dev/null || true)
   fi
   if [ -z "$app" ]; then
     app="/Applications/Lu-Mail.app"
@@ -49,9 +70,7 @@ main() {
     [ -d "$app" ] || fail "$app gibt es nicht."
     app="$(cd "$app" && pwd)"
     [ "$(info "$app" CFBundleIdentifier || true)" = "$bundle_id" ] || fail "$app ist nicht Lu-Mail."
-    case "$app" in
-      /Volumes/*) fail "Lu-Mail läuft aus dem Disk-Image – bitte zuerst nach „Programme“ ziehen." ;;
-    esac
+    readonly_volume "$app" && fail "Lu-Mail liegt auf einem schreibgeschützten Laufwerk (Disk-Image?) – bitte zuerst nach „Programme“ ziehen."
     current="$(info "$app" CFBundleShortVersionString || true)"
   fi
 
@@ -66,8 +85,8 @@ main() {
   version="${dmg#Lu-Mail-}"
   version="${version%-macOS.dmg}"
 
-  if [ "$current" = "$version" ]; then
-    say "Lu-Mail $version ist aktuell ($app)."
+  if [ -n "$current" ] && ! newer "$version" "$current"; then
+    say "Lu-Mail ${current} ist aktuell ($app)."
     return 0
   fi
   if [ "$fresh" = 1 ]; then
@@ -108,8 +127,13 @@ main() {
       sleep 0.5
     done
     pgrep -f "$app/Contents/MacOS/" >/dev/null 2>&1 && fail "Lu-Mail ist noch offen. Bitte beenden und den Befehl erneut ausführen."
-    # Lu-Mail spielt ein schon geladenes Update beim Beenden selbst ein – kurz abwarten.
-    sleep 2
+    # Lu-Mail spielt ein schon geladenes Update beim Beenden selbst ein – warten, bis dessen Installer fertig ist.
+    sleep 1
+    for i in $(seq 1 120); do
+      pgrep -f "LuMail/Update/install.sh" >/dev/null 2>&1 || break
+      sleep 0.5
+    done
+    pgrep -f "LuMail/Update/install.sh" >/dev/null 2>&1 && fail "Lu-Mail installiert gerade selbst ein Update – bitte in einer Minute erneut ausführen."
     if [ "$(info "$app" CFBundleShortVersionString || true)" = "$version" ]; then
       say "Lu-Mail hat sich selbst auf $version aktualisiert."
       open "$app" 2>/dev/null || true
@@ -119,7 +143,7 @@ main() {
 
   local dir aside sudo=""
   dir="$(dirname "$app")"
-  aside="$app.lumail-old"
+  aside="$app.lumail-update-old"
   if [ ! -w "$dir" ] || { [ -e "$app" ] && [ ! -w "$app" ]; }; then
     say "Für $dir wird dein Mac-Passwort benötigt."
     sudo="sudo"
