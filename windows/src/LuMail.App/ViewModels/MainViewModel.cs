@@ -42,7 +42,13 @@ public sealed class MainViewModel : ObservableObject
         _runOnUi = runOnUi;
     }
 
+    /// <summary>Sichtbare Zeilen der Seitenleiste (ohne die Inhalte zugeklappter Anbieter/Konten).</summary>
     public ObservableCollection<SidebarItem> Sidebar { get; } = new();
+
+    /// <summary>Alle Zeilen der Seitenleiste, auch die zugeklappten (Auswahl, Zähler, Suche nach Schlüssel).</summary>
+    public IReadOnlyList<SidebarItem> SidebarAll => _sidebarAll;
+    private List<SidebarItem> _sidebarAll = new();
+    private bool _accountsLoaded;
     public ObservableCollection<MessageItem> Messages { get; } = new();
     public List<Account> Accounts { get; private set; } = new();
     /// <summary>Konten mit IMAP/SMTP (ohne Web-Konten) – nur diese betreffen Abruf, Push, Suche, Regeln, Verfassen.</summary>
@@ -131,6 +137,7 @@ public sealed class MainViewModel : ObservableObject
     public void LoadAccounts()
     {
         Accounts = _s.Accounts.Load();
+        _accountsLoaded = true;
         foreach (var id in _states.Keys.Except(Accounts.Select(a => a.Id)).ToList()) _states.Remove(id);
         foreach (var id in _idle.Keys.Except(Accounts.Select(a => a.Id)).ToList())
         {
@@ -371,14 +378,23 @@ public sealed class MainViewModel : ObservableObject
             var accounts = Accounts.Where(a => string.Equals(a.ProviderId, provider.Id, StringComparison.OrdinalIgnoreCase)).ToList();
             if (accounts.Count == 0) continue;
 
-            // §9: mehrere (IMAP-)Konten → Überschrift klickbar („Alle <Anbieter>-Posteingänge“).
+            // Überschrift: klappt die Gruppe auf/zu. §9: mehrere (IMAP-)Konten → eigene Zeile
+            // „Alle <Anbieter>-Posteingänge“ als erster Eintrag der Gruppe (wie unter macOS).
             items.Add(new SidebarItem
             {
                 Kind = SidebarItemKind.Provider, Title = provider.Name, Provider = provider,
-                Target = accounts.Count(a => !a.IsWeb) > 1 ? SidebarTarget.ProviderInbox : SidebarTarget.None,
-                ListTitle = $"Alle {provider.Name}-Posteingänge",
                 DotBrush = BrushCache.ForProvider(provider), Key = "provider:" + provider.Id,
+                IsExpanded = !_s.Settings.CollapsedProviders.Contains(provider.Id),
             });
+            if (accounts.Count(a => !a.IsWeb) > 1)
+            {
+                items.Add(new SidebarItem
+                {
+                    Kind = SidebarItemKind.Folder, Target = SidebarTarget.ProviderInbox, Provider = provider,
+                    Title = $"Alle {provider.Name}-Posteingänge", ListTitle = $"Alle {provider.Name}-Posteingänge", Glyph = "\uE715",
+                    Key = "providerinbox:" + provider.Id, Indent = new Thickness(8, 0, 0, 0), GroupProviderId = provider.Id,
+                });
+            }
 
             foreach (var account in accounts)
             {
@@ -388,6 +404,7 @@ public sealed class MainViewModel : ObservableObject
                     Kind = SidebarItemKind.Account, Title = account.Email, Subtitle = account.DisplayName,
                     Account = account, Provider = provider, Key = "account:" + account.Id,
                     Indent = new Thickness(8, 0, 0, 0), Error = state.Error,
+                    GroupProviderId = provider.Id, IsExpanded = !_s.Settings.CollapsedAccounts.Contains(account.Id),
                 });
 
                 if (account.IsWeb)
@@ -404,6 +421,7 @@ public sealed class MainViewModel : ObservableObject
                                 Glyph = entry.IsCategory ? CategoryGlyph(entry.Key) : RoleGlyph(WebRole(entry.Key)),
                                 Account = account, Provider = provider, FolderPath = entry.Key,
                                 Key = $"web:{account.Id}:{entry.Key}", Indent = new Thickness(20, 0, 0, 0),
+                                GroupProviderId = provider.Id, GroupAccountId = account.Id,
                             });
                         }
                     }
@@ -422,6 +440,7 @@ public sealed class MainViewModel : ObservableObject
                             DotBrush = id.StartsWith("custom-", StringComparison.Ordinal) ? BrushCache.ForCategory(id) : null,
                             Account = account, Provider = provider, FolderPath = "INBOX", Role = FolderRole.Inbox,
                             Key = $"cat:{account.Id}:{id}", Indent = new Thickness(20, 0, 0, 0),
+                                GroupProviderId = provider.Id, GroupAccountId = account.Id,
                         });
                     }
                 }
@@ -433,6 +452,7 @@ public sealed class MainViewModel : ObservableObject
                         Title = "Posteingang", ListTitle = $"Posteingang · {account.Email}", Glyph = "",
                         Account = account, Provider = provider, FolderPath = "INBOX", Role = FolderRole.Inbox,
                         Key = $"cat:{account.Id}:inbox", Indent = new Thickness(20, 0, 0, 0),
+                                GroupProviderId = provider.Id, GroupAccountId = account.Id,
                     });
                 }
 
@@ -445,28 +465,79 @@ public sealed class MainViewModel : ObservableObject
                         Glyph = RoleGlyph(folder.Role), Account = account, Provider = provider,
                         FolderPath = folder.Path, Role = folder.Role,
                         Key = $"folder:{account.Id}:{folder.Path}", Indent = new Thickness(20, 0, 0, 0),
+                                GroupProviderId = provider.Id, GroupAccountId = account.Id,
                     });
                 }
             }
         }
 
+        // Zugeklappt-Zustand entfernter Konten verwerfen.
+        if (_accountsLoaded && _s.Settings.PruneCollapsedAccounts(Accounts.Select(a => a.Id))) _s.SaveSettings();
+
         var selectedKey = Selected?.Key ?? "all";
-        if (!force && Sidebar.Select(i => i.Key).SequenceEqual(items.Select(i => i.Key)))
+        if (!force && _sidebarAll.Select(i => i.Key).SequenceEqual(items.Select(i => i.Key)))
         {
-            for (var i = 0; i < items.Count; i++) Sidebar[i].Error = items[i].Error;
+            for (var i = 0; i < items.Count; i++) _sidebarAll[i].Error = items[i].Error;
+            SyncVisibleSidebar();
         }
         else
         {
+            _sidebarAll = items;
             Sidebar.Clear();
-            foreach (var item in items) Sidebar.Add(item);
+            foreach (var item in items.Where(IsVisibleInSidebar)) Sidebar.Add(item);
         }
 
-        var selected = Sidebar.FirstOrDefault(i => i.Key == selectedKey && i.IsSelectable) ?? Sidebar.First(i => i.Key == "all");
-        foreach (var item in Sidebar) item.IsSelected = ReferenceEquals(item, selected);
+        // Auswahl bleibt erhalten, auch wenn sie in einer zugeklappten Gruppe liegt (dann nur verborgen).
+        var selected = _sidebarAll.FirstOrDefault(i => i.Key == selectedKey && i.IsSelectable) ?? _sidebarAll.First(i => i.Key == "all");
+        foreach (var item in _sidebarAll) item.IsSelected = ReferenceEquals(item, selected);
         var changed = Selected?.Key != selected.Key;
         Selected = selected;
         RecountSidebar();
         if (changed) SelectedChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private bool IsVisibleInSidebar(SidebarItem item) =>
+        !(item.GroupProviderId is { } provider && _s.Settings.CollapsedProviders.Contains(provider))
+        && !(item.GroupAccountId is { } account && _s.Settings.CollapsedAccounts.Contains(account));
+
+    /// <summary>Sichtbare Zeilen an den Zugeklappt-Zustand anpassen (nur einfügen/entfernen, keine Neuerstellung).</summary>
+    private void SyncVisibleSidebar()
+    {
+        var visible = _sidebarAll.Where(IsVisibleInSidebar).ToList();
+        var keep = new HashSet<SidebarItem>(visible, ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < visible.Count; i++)
+        {
+            // Beide Listen sind Teilfolgen von _sidebarAll in derselben Reihenfolge.
+            while (i < Sidebar.Count && !ReferenceEquals(Sidebar[i], visible[i]) && !keep.Contains(Sidebar[i])) Sidebar.RemoveAt(i);
+            if (i < Sidebar.Count && ReferenceEquals(Sidebar[i], visible[i])) continue;
+            Sidebar.Insert(i, visible[i]);
+        }
+        while (Sidebar.Count > visible.Count) Sidebar.RemoveAt(Sidebar.Count - 1);
+    }
+
+    public void ToggleExpanded(SidebarItem item) => SetExpanded(item, !item.IsExpanded);
+
+    /// <summary>Anbieter/Konto auf- oder zuklappen; der Zustand wird gespeichert. Die Auswahl bleibt unverändert.</summary>
+    public void SetExpanded(SidebarItem item, bool expanded)
+    {
+        if (!item.IsExpandable || item.IsExpanded == expanded) return;
+        var (list, id) = item.Kind == SidebarItemKind.Provider
+            ? (_s.Settings.CollapsedProviders, item.Provider?.Id)
+            : (_s.Settings.CollapsedAccounts, item.Account?.Id);
+        if (id is null) return;
+        item.IsExpanded = expanded;
+        if (AppSettings.SetCollapsed(list, id, !expanded)) _s.SaveSettings();
+        SyncVisibleSidebar();
+        RecountSidebar();
+    }
+
+    /// <summary>Gruppen aufklappen, in denen <paramref name="item"/> liegt (z. B. nach dem Hinzufügen eines Kontos).</summary>
+    public void RevealInSidebar(SidebarItem item)
+    {
+        foreach (var group in _sidebarAll.Where(g =>
+                     (g.Kind == SidebarItemKind.Provider && g.Provider?.Id == item.GroupProviderId)
+                     || (g.Kind == SidebarItemKind.Account && g.Account?.Id == item.GroupAccountId)).ToList())
+            SetExpanded(group, true);
     }
 
     private static FolderRole WebRole(string key) => key switch
@@ -482,7 +553,7 @@ public sealed class MainViewModel : ObservableObject
     public void RecountSidebar()
     {
         var separate = _s.Settings.SeparateCategories;
-        foreach (var item in Sidebar.Where(i => i.IsSelectable))
+        foreach (var item in _sidebarAll.Where(i => i.IsSelectable))
         {
             item.Unread = item.Target switch
             {
@@ -501,9 +572,24 @@ public sealed class MainViewModel : ObservableObject
                 _ => 0,
             };
         }
-        // Web-Konten: Zahl auch am Konto (§20)
-        foreach (var item in Sidebar.Where(i => i.Kind == SidebarItemKind.Account && i.Account is { IsWeb: true }))
-            item.Unread = WebUnread?.Invoke(item.Account!.Id) ?? 0;
+        // Konten: Web-Konten zeigen ihre Zahl immer (§20); IMAP-Konten nur zugeklappt (Summe von Posteingang/Kategorien).
+        var perAccount = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var item in _sidebarAll.Where(i => i.Kind == SidebarItemKind.Account && i.Account is not null))
+        {
+            var account = item.Account!;
+            var total = account.IsWeb
+                ? WebUnread?.Invoke(account.Id) ?? 0
+                : _sidebarAll.Where(i => i.Target == SidebarTarget.Category && i.Account?.Id == account.Id).Sum(i => i.Unread);
+            perAccount[account.Id] = total;
+            item.Unread = account.IsWeb || !item.IsExpanded ? total : 0;
+        }
+        // Zugeklappter Anbieter: Ungelesene aller seiner Konten.
+        foreach (var item in _sidebarAll.Where(i => i.Kind == SidebarItemKind.Provider && i.Provider is not null))
+        {
+            item.Unread = item.IsExpanded ? 0 : _sidebarAll
+                .Where(i => i.Kind == SidebarItemKind.Account && i.GroupProviderId == item.Provider!.Id && i.Account is not null)
+                .Sum(i => perAccount.GetValueOrDefault(i.Account!.Id));
+        }
     }
 
     /// <summary>§2: Ungelesene der Kategorie Posteingang über alle Konten.</summary>
@@ -527,7 +613,7 @@ public sealed class MainViewModel : ObservableObject
         await ShowSelectedAsync(reload: false);
     }
 
-    public SidebarItem? FindSidebar(string key) => Sidebar.FirstOrDefault(i => i.Key == key);
+    public SidebarItem? FindSidebar(string key) => _sidebarAll.FirstOrDefault(i => i.Key == key);
 
     private async Task ShowSelectedAsync(bool reload)
     {

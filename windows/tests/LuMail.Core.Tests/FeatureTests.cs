@@ -1131,3 +1131,48 @@ internal sealed class SingleThreadContext : SynchronizationContext, IDisposable
 
     public void Dispose() => _queue.CompleteAdding();
 }
+
+public class SidebarCollapseSettingsTests
+{
+    [Fact]
+    public void SetCollapsed_AddsAndRemovesOnce()
+    {
+        var list = new List<string>();
+        Assert.True(AppSettings.SetCollapsed(list, "gmail", true));
+        Assert.False(AppSettings.SetCollapsed(list, "gmail", true)); // schon zugeklappt
+        Assert.Equal(new[] { "gmail" }, list);
+        Assert.True(AppSettings.SetCollapsed(list, "gmail", false));
+        Assert.False(AppSettings.SetCollapsed(list, "gmail", false));
+        Assert.Empty(list);
+    }
+
+    [Fact]
+    public void CollapsedState_PersistsAndDropsRemovedAccounts()
+    {
+        var settings = new AppSettings();
+        Assert.Empty(settings.CollapsedProviders); // Standard: alles aufgeklappt
+        Assert.Empty(settings.CollapsedAccounts);
+        AppSettings.SetCollapsed(settings.CollapsedProviders, "gmail", true);
+        AppSettings.SetCollapsed(settings.CollapsedAccounts, "a1", true);
+        AppSettings.SetCollapsed(settings.CollapsedAccounts, "gone", true);
+
+        Assert.True(settings.PruneCollapsedAccounts(new[] { "a1", "a2" }));
+        Assert.False(settings.PruneCollapsedAccounts(new[] { "a1", "a2" }));
+        Assert.Equal(new[] { "a1" }, settings.CollapsedAccounts);
+
+        var path = Path.Combine(Path.GetTempPath(), "lumail-sidebar-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            settings.Save(path);
+            var loaded = AppSettings.Load(path);
+            Assert.Equal(new[] { "gmail" }, loaded.CollapsedProviders);
+            Assert.Equal(new[] { "a1" }, loaded.CollapsedAccounts);
+            File.WriteAllText(path, "{}");
+            Assert.Empty(AppSettings.Load(path).CollapsedAccounts); // ältere Datei → aufgeklappt
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+}

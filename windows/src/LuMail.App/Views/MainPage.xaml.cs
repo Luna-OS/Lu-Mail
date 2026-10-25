@@ -79,6 +79,7 @@ public sealed partial class MainPage : Page
         _initialized = true;
 
         SidebarList.ItemsSource = Vm.Sidebar;
+        SidebarList.AddHandler(KeyDownEvent, new KeyEventHandler(OnSidebarKeyDown), handledEventsToo: true);
         MessageList.ItemsSource = Vm.Messages;
         ApplySky();
         ConversationToggle.IsChecked = Vm.ConversationsEnabled;
@@ -190,11 +191,26 @@ public sealed partial class MainPage : Page
 
     private async void OnSidebarItemClick(object sender, ItemClickEventArgs e)
     {
+        if (e.ClickedItem is SidebarItem { IsExpandable: true } group)
+        {
+            Vm.ToggleExpanded(group); // Anbieter-Überschrift / Kontozeile: auf- und zuklappen
+            return;
+        }
         if (e.ClickedItem is SidebarItem item && item.IsSelectable)
         {
             await Vm.SelectAsync(item);
             UpdateListHeader();
         }
+    }
+
+    /// <summary>Links/Rechts auf einer Anbieter-Überschrift oder Kontozeile: zu-/aufklappen.</summary>
+    private void OnSidebarKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right)) return;
+        if (e.OriginalSource is not ListViewItem container || SidebarList.ItemFromContainer(container) is not SidebarItem { IsExpandable: true } item) return;
+        var expand = e.Key == Windows.System.VirtualKey.Right;
+        if (item.IsExpanded != expand) Vm.SetExpanded(item, expand);
+        e.Handled = true;
     }
 
     // ==================================================== Nachrichtenliste
@@ -542,11 +558,18 @@ public sealed partial class MainPage : Page
         ReaderPlaceholder.Visibility = Visibility.Visible;
         UpdateReaderBackground();
         ReaderLoading.IsActive = false;
-        if (_webViewReady)
-        {
-            _navigatingInternally = true;
-            ReaderView.CoreWebView2.NavigateToString("<!doctype html><html><body></body></html>");
-        }
+        ShowBlankBody();
+    }
+
+    /// <summary>Leeren Inhalt im Theme-Hintergrund zeigen (z. B. während eine Nachricht lädt).</summary>
+    private void ShowBlankBody()
+    {
+        if (!_webViewReady) return;
+        var dark = ActualTheme == ElementTheme.Dark;
+        var tokens = _s.Theme.Palette(_s.Settings.ThemeVariant, dark, _s.Settings.Accent);
+        var background = tokens.TryGetValue("surface", out var surface) ? surface : (dark ? "#1A1C3A" : "#FFFFFF");
+        _navigatingInternally = true;
+        ReaderView.CoreWebView2.NavigateToString($"<!doctype html><html><body style=\"background:{background}\"></body></html>");
     }
 
     private void UpdateActionButtons()
@@ -1217,8 +1240,14 @@ public sealed partial class MainPage : Page
     }
 
     /// <summary>Nachricht über den Web-Leser öffnen und anzeigen.</summary>
+    private const string WebReadFailedText = "Die Nachricht konnte in der Lu-Ansicht nicht gelesen werden – öffne sie in der Webseite.";
+
     private async Task OpenWebMessageAsync(MessageItem item, int version)
     {
+        // Alten Inhalt sofort verwerfen: nie die vorige Nachricht unter dem Kopf der neuen.
+        _webMessage = null;
+        ShowBlankBody();
+        if (MessageBar.IsOpen && MessageBar.Message == WebReadFailedText) MessageBar.IsOpen = false;
         PhishingBar.IsOpen = false;
         UnsubscribeButton.Visibility = Visibility.Collapsed;
         ScheduledBar.Visibility = Visibility.Collapsed;
@@ -1235,7 +1264,8 @@ public sealed partial class MainPage : Page
             if (token.IsCancellationRequested || version != _openVersion) return;
             if (result is null)
             {
-                ShowMessage("Die Nachricht konnte in der Lu-Ansicht nicht gelesen werden – öffne sie in der Webseite.", isError: false,
+                // Wirklich nichts lesbar (open fehlgeschlagen oder 15 s ohne Inhalt): Lesebereich bleibt leer.
+                ShowMessage(WebReadFailedText, isError: false,
                     actionText: "In der Webseite öffnen", action: OpenCurrentInWebsite, severity: InfoBarSeverity.Warning);
                 return;
             }
@@ -1346,8 +1376,12 @@ public sealed partial class MainPage : Page
             {
                 await Vm.RefreshAllAsync();
                 await App.Web.SyncAccountsAsync(Vm.WebAccounts);
-                var inbox = Vm.Sidebar.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target is SidebarTarget.Category or SidebarTarget.Web);
-                if (inbox is not null) await Vm.SelectAsync(inbox);
+                var inbox = Vm.SidebarAll.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target is SidebarTarget.Category or SidebarTarget.Web);
+                if (inbox is not null)
+                {
+                    Vm.RevealInSidebar(inbox);
+                    await Vm.SelectAsync(inbox);
+                }
                 UpdateListHeader();
             }
         }
@@ -1399,7 +1433,7 @@ public sealed partial class MainPage : Page
         {
             Vm.RebuildSidebar();
             Vm.ApplyRulesLocally();
-            await Vm.SelectAsync(Vm.Selected ?? Vm.Sidebar.First(i => i.Key == "all"));
+            await Vm.SelectAsync(Vm.Selected ?? Vm.SidebarAll.First(i => i.Key == "all"));
         }
         RenderCurrent();
         UpdateListHeader();

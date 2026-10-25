@@ -17,20 +17,25 @@
                        Foreground="{ThemeResource LuTextMuted}" Text="{x:Bind Title}" />
         </DataTemplate>
 
+        <!-- Anbieter-Überschrift: Klick oder Links/Rechts klappt die Gruppe auf/zu (Chevron ▾/▸). -->
         <DataTemplate x:Key="SidebarProviderTemplate" x:DataType="vm:SidebarItem">
-            <Grid Height="30" Margin="0,12,0,0">
+            <Grid Height="30" Margin="0,12,0,0" Background="Transparent"
+                  ToolTipService.ToolTip="{x:Bind ExpandToolTip, Mode=OneWay}">
                 <Border Background="{ThemeResource LuSurfaceSelected}" CornerRadius="{StaticResource LuRadiusSmall}"
                         Visibility="{x:Bind SelectionVisibility, Mode=OneWay}" />
-                <Grid Padding="10,0,8,0" ColumnSpacing="8">
+                <Grid Padding="2,0,8,0" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="12" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind DotBrush}" />
-                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                    <FontIcon VerticalAlignment="Center" FontSize="9" Foreground="{ThemeResource LuTextMuted}"
+                              Glyph="{x:Bind ChevronGlyph, Mode=OneWay}" />
+                    <Ellipse Grid.Column="1" Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind DotBrush}" />
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
                                Foreground="{ThemeResource LuTextSecondary}" Text="{x:Bind Title}" />
-                    <Border Grid.Column="2" MinWidth="20" Padding="7,1,7,2" VerticalAlignment="Center"
+                    <Border Grid.Column="3" MinWidth="20" Padding="7,1,7,2" VerticalAlignment="Center"
                             Background="{ThemeResource LuAccent}" CornerRadius="9" Visibility="{x:Bind BadgeVisibility, Mode=OneWay}">
                         <TextBlock HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold"
                                    Foreground="{ThemeResource LuAccentText}" Text="{x:Bind UnreadText, Mode=OneWay}" />
@@ -39,15 +44,20 @@
             </Grid>
         </DataTemplate>
 
+        <!-- Kontozeile: Klick oder Links/Rechts klappt die Ordner auf/zu; zugeklappt mit Ungelesen-Zahl. -->
         <DataTemplate x:Key="SidebarAccountTemplate" x:DataType="vm:SidebarItem">
-            <Grid Margin="{x:Bind Indent}" Padding="10,6,8,2" ColumnSpacing="6">
+            <Grid Margin="{x:Bind Indent}" Padding="2,6,8,2" Background="Transparent" ColumnSpacing="6"
+                  ToolTipService.ToolTip="{x:Bind ExpandToolTip, Mode=OneWay}">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="12" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}"
+                <FontIcon VerticalAlignment="Center" FontSize="9" Foreground="{ThemeResource LuTextMuted}"
+                          Glyph="{x:Bind ChevronGlyph, Mode=OneWay}" />
+                <TextBlock Grid.Column="1" FontSize="13" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}"
                            Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                     <FontIcon FontSize="13" Foreground="{ThemeResource LuDanger}" Glyph="&#xE7BA;"
                               ToolTipService.ToolTip="{x:Bind Error, Mode=OneWay}"
                               Visibility="{x:Bind ErrorVisibility, Mode=OneWay}" />

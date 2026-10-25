@@ -59,6 +59,36 @@ public sealed class SidebarItem : ObservableObject
 
     public bool IsSelectable => Kind == SidebarItemKind.Folder || Target == SidebarTarget.ProviderInbox;
 
+    // ------------------------------------------------------------ Auf-/Zuklappen
+
+    /// <summary>Anbieter, zu dessen Gruppe die Zeile gehört (nicht bei der Anbieter-Überschrift selbst).</summary>
+    public string? GroupProviderId { get; init; }
+
+    /// <summary>Konto, zu dessen Ordnern die Zeile gehört (nicht bei der Kontozeile selbst).</summary>
+    public string? GroupAccountId { get; init; }
+
+    /// <summary>Anbieter-Überschrift und Kontozeile lassen sich zuklappen.</summary>
+    public bool IsExpandable => Kind is SidebarItemKind.Provider or SidebarItemKind.Account;
+
+    private bool _isExpanded = true;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (SetProperty(ref _isExpanded, value))
+            {
+                OnPropertyChanged(nameof(ChevronGlyph));
+                OnPropertyChanged(nameof(ExpandToolTip));
+            }
+        }
+    }
+
+    /// <summary>▾ aufgeklappt, ▸ zugeklappt (Segoe Fluent Icons: ChevronDown / ChevronRight).</summary>
+    public string ChevronGlyph => IsExpanded ? "\uE70D" : "\uE76C";
+
+    public string ExpandToolTip => $"{Title} {(IsExpanded ? "zuklappen" : "aufklappen")} (Links/Rechts)";
+
     /// <summary>Überschrift der Nachrichtenliste.</summary>
     public string ListTitle { get; init; } = "";
 
