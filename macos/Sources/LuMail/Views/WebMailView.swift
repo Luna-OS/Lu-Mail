@@ -122,6 +122,8 @@ struct WebInboxView: View {
     @State private var messageFailed = false
     @State private var allowRemote = false
     @State private var refreshToken = 0
+    /// Laufendes Öffnen einer Nachricht – wird beim Wechsel abgebrochen.
+    @State private var messageTask: Task<Void, Never>?
 
     private var key: String { WebMailService.key(account.id, folder) }
     private var items: [WebReader.Item] { model.webMail.readerItems[key] ?? [] }
@@ -146,7 +148,10 @@ struct WebInboxView: View {
         .navigationTitle(model.title)
         .task(id: "\(key)|\(refreshToken)") { await refreshLoop() }
         .onChange(of: selectedId) { _, id in openMessage(id) }
+        .onDisappear { messageTask?.cancel() }
         .onChange(of: key) { _, _ in
+            messageTask?.cancel()
+            messageTask = nil
             selectedId = nil
             message = nil
         }
@@ -163,7 +168,7 @@ struct WebInboxView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .help("Neu laden")
-            if model.webMail.readerLoading.contains(key) {
+            if model.webMail.isLoadingReader(key) {
                 ProgressView().controlSize(.small)
             }
             Spacer(minLength: 8)
@@ -195,7 +200,7 @@ struct WebInboxView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
             if items.isEmpty {
-                if model.webMail.readerLoading.contains(key) {
+                if model.webMail.isLoadingReader(key) {
                     ProgressView("Lade \(provider.name) …").frame(maxHeight: .infinity)
                 } else {
                     ContentUnavailableView {
@@ -253,7 +258,7 @@ struct WebInboxView: View {
                     HStack {
                         Button {
                             Task {
-                                await model.webMail.openInPage(account.id, config: web, item: item)
+                                await model.webMail.openInPage(account.id, config: web, folder: folder, item: item)
                                 model.setShowsWebsite(true, for: account.id)
                             }
                         } label: {
@@ -330,9 +335,14 @@ struct WebInboxView: View {
         while !Task.isCancelled {
             // Während eine Nachricht offen ist, bleibt der Browser bei ihr.
             if selectedId == nil {
-                switch await model.webMail.loadList(account.id, config: web, folder: folder) {
+                let outcome = await model.webMail.loadList(account.id, config: web, folder: folder)
+                // Inzwischen anderer Ordner gewählt? Dann zählt das Ergebnis nicht mehr.
+                guard !Task.isCancelled else { return }
+                switch outcome {
                 case .items:
                     break
+                case .cancelled:
+                    return
                 case .needsLogin:
                     model.fallBackToWebsite(account.id, reason: "Bitte bei \(provider.name) anmelden – danach zurück zur Lu-Ansicht.")
                     return
@@ -346,13 +356,15 @@ struct WebInboxView: View {
     }
 
     private func openMessage(_ id: String?) {
+        messageTask?.cancel()
+        messageTask = nil
         message = nil
         messageFailed = false
         allowRemote = model.alwaysLoadRemoteContent
         guard let id, let item = items.first(where: { $0.id == id }) else { return }
-        Task {
+        messageTask = Task {
             let result = await model.webMail.loadMessage(account.id, config: web, item: item)
-            guard selectedId == id else { return }
+            guard !Task.isCancelled, selectedId == id else { return }
             message = result
             messageFailed = result == nil
         }

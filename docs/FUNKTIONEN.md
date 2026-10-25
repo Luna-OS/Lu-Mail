@@ -272,9 +272,13 @@ in einer eigenen Content-World aus (`WKContentWorld.defaultClient`), Windows per
 - **Mitschnitt** (`shared/webmail/lu-capture.js`): läuft im Seitenkontext ab Dokumentbeginn (macOS: `WKUserScript`
   in der Page-World, Windows: `AddScriptToExecuteOnDocumentCreatedAsync`) und merkt sich die Metadaten aus den
   Listen-Antworten der Webmail-API (Proton: `/api/mail/v4/conversations|messages` – Absender, Betreff, Datum,
-  ungelesen, Anhänge; verschlüsselte Inhalte werden verworfen) im Attribut `data-lu-capture` von `<html>`. Der Leser
-  nimmt diese Daten vor dem Seitenaufbau; fehlen sie, liest er Absender/Betreff aus dem Seitenaufbau bzw. notfalls aus
-  den Textzeilen eines Eintrags.
+  ungelesen, Anhänge; verschlüsselte Inhalte werden verworfen) im Attribut `data-lu-capture` von `<html>`; spätere
+  Antworten (z. B. Details einer Unterhaltung) werden mit vorhandenen Einträgen zusammengeführt. Der Leser nimmt
+  Absender, Betreff, Datum und Anhänge aus diesen Daten, „ungelesen“ aber aus der Seite (Klasse `read`/`unread` des
+  Eintrags, die Proton live aktualisiert) und nur ohne diese Klasse aus dem Mitschnitt. Fehlt der Mitschnitt, liest er
+  Absender/Betreff aus dem Seitenaufbau bzw. notfalls aus den Textzeilen eines Eintrags. Platzhalter-Einträge, die
+  Proton beim Laden zeigt (`placeholder-N`, `.item-is-loading`), gelten als „lädt noch“. Inhalte: pro aufgeklappter
+  Nachricht `article[data-message-id]` → `iframe[data-testid="content-iframe"]`, Absender/Datum per ID aus dem Mitschnitt.
 - **Qualitätsprüfung:** Hat mindestens die Hälfte der gelesenen Einträge weder Absender noch Betreff, meldet der
   Leser `state: "error"` (`reason: "unreadable"`) – Lu-Mail zeigt dann die Webseite statt einer Liste voller
   „(unbekannt)“.

@@ -31,6 +31,8 @@ public sealed partial class MainPage : Page
     private readonly HashSet<string> _webFallback = new();
     private DispatcherQueueTimer? _webListTimer;
     private int _webListVersion;
+    private CancellationTokenSource? _webListCts;
+    private CancellationTokenSource? _webMessageCts;
     private bool _webLuActive;
     private bool _externalAllowed;
     private bool _webViewReady;
@@ -533,6 +535,7 @@ public sealed partial class MainPage : Page
         _current = null;
         _currentDetail = null;
         _webMessage = null;
+        _webMessageCts?.Cancel();
         _threadDetails = Array.Empty<MessageDetail>();
         _selectedKey = null;
         ReaderPanel.Visibility = Visibility.Collapsed;
@@ -1056,6 +1059,7 @@ public sealed partial class MainPage : Page
     /// </summary>
     private async Task ApplyWebSelectionAsync()
     {
+        CancelWebLoads(); // anderer Ordner/anderes Konto: laufende Abfragen verwerfen
         if (Vm.Selected is { Target: SidebarTarget.Web, Account: { } account } item)
         {
             WebAccountText.Text = account.Email;
@@ -1099,14 +1103,18 @@ public sealed partial class MainPage : Page
         }
         catch (Exception ex)
         {
-            ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
+            if (IsCurrentLuSelection(item)) ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
             return;
         }
+        // Verspätete Fortsetzung für einen inzwischen verlassenen Ordner: nichts tun (vor allem nicht die Abfrage
+        // des aktuellen Ordners abbrechen).
+        if (!IsCurrentLuSelection(item)) return;
         await LoadWebListAsync(item, account, keepSelection: false);
     }
 
     private async Task ShowWebsiteAsync(Account account, string folderKey, bool navigate)
     {
+        CancelWebLoads();
         _webLuActive = false;
         _webListTimer?.Stop();
         SetWebsiteMode(true);
@@ -1127,14 +1135,17 @@ public sealed partial class MainPage : Page
     /// <summary>Liste über den Web-Leser holen (§21) – bei Fehler Webseite, bei Abmeldung Webseite zum Anmelden.</summary>
     private async Task LoadWebListAsync(SidebarItem item, Account account, bool keepSelection)
     {
+        if (!IsCurrentLuSelection(item)) return; // Abbruch-Handle gehört immer zur aktuellen Auswahl
         var version = ++_webListVersion;
+        var token = Renew(ref _webListCts); // neuere Abfrage ersetzt die alte
         var key = item.FolderPath ?? "primary";
         if (!keepSelection) _selectedKey = null;
         BusyBar.Visibility = Visibility.Visible;
         try
         {
-            var (outcome, items) = await App.Web.LoadListAsync(account, key);
-            if (version != _webListVersion || !_webLuActive || Vm.Selected?.Key != item.Key) return;
+            var (outcome, items) = await App.Web.LoadListAsync(account, key, token);
+            // Abgebrochen oder veraltet → nichts tun (kein Hinweis, kein Wechsel zur Webseite).
+            if (token.IsCancellationRequested || version != _webListVersion || !_webLuActive || Vm.Selected?.Key != item.Key) return;
             var provider = _s.Providers.Find(account.ProviderId);
             switch (outcome)
             {
@@ -1162,6 +1173,24 @@ public sealed partial class MainPage : Page
         {
             if (version == _webListVersion) BusyBar.Visibility = Vm.IsBusy ? Visibility.Visible : Visibility.Collapsed;
         }
+    }
+
+    /// <summary>Ist <paramref name="item"/> noch die gewählte Ansicht und die Lu-Ansicht aktiv?</summary>
+    private bool IsCurrentLuSelection(SidebarItem item) => _webLuActive && Vm.Selected?.Key == item.Key;
+
+    /// <summary>Alte Abfrage abbrechen und ein neues Abbruch-Token ausgeben.</summary>
+    private static CancellationToken Renew(ref CancellationTokenSource? source)
+    {
+        source?.Cancel();
+        source = new CancellationTokenSource();
+        return source.Token;
+    }
+
+    /// <summary>Laufende Listen- und Nachrichtenabfragen der Lu-Ansicht abbrechen.</summary>
+    private void CancelWebLoads()
+    {
+        _webListCts?.Cancel();
+        _webMessageCts?.Cancel();
     }
 
     private async Task ReloadWebListAsync()
@@ -1199,10 +1228,11 @@ public sealed partial class MainPage : Page
         ExternalBanner.Visibility = Visibility.Collapsed;
         ShowReaderHeader(item, null);
         ReaderLoading.IsActive = true;
+        var token = Renew(ref _webMessageCts);
         try
         {
-            var result = await App.Web.LoadMessageAsync(item.Account, item.WebItem!);
-            if (version != _openVersion) return;
+            var result = await App.Web.LoadMessageAsync(item.Account, item.WebItem!, token);
+            if (token.IsCancellationRequested || version != _openVersion) return;
             if (result is null)
             {
                 ShowMessage("Die Nachricht konnte in der Lu-Ansicht nicht gelesen werden – öffne sie in der Webseite.", isError: false,
@@ -1220,6 +1250,10 @@ public sealed partial class MainPage : Page
                 if (last.Date.Length > 0) ReaderDate.Text = last.Date;
             }
             RenderCurrent();
+        }
+        catch (OperationCanceledException)
+        {
+            // anderer Ordner/andere Nachricht gewählt oder Lu-Ansicht verlassen
         }
         finally
         {
@@ -1266,6 +1300,7 @@ public sealed partial class MainPage : Page
             _webFallback.Remove(account.Id);
             _ = previous;
         }
+        CancelWebLoads();
         _webLuActive = false;
         _webListTimer?.Stop();
         SetWebsiteMode(true);

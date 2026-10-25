@@ -856,7 +856,8 @@ public class WebReaderTests
         Assert.Equal(expected, WebReader.NavigationFor(current, folder));
 
     private static readonly WebReaderTiming Fast = new(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(150),
-        TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(200));
+        TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(200))
+    { ErrorAfter = TimeSpan.FromMilliseconds(100) };
 
     private static Func<string, Task<string?>> Sequence(params string?[] results)
     {
@@ -897,6 +898,91 @@ public class WebReaderTests
         Assert.Contains("data-lu-capture", script);
         Assert.Contains("__luCaptureInstalled", script);
         Assert.Contains(LuMail.Core.Resources.SharedResources.Prefix + "lu-capture.js", LuMail.Core.Resources.SharedResources.ResourceNames);
+    }
+
+    [Fact]
+    public async Task PollList_ErrorFailsOnlyWhenPersistent_UnsupportedImmediately()
+    {
+        Assert.Equal(4, WebReaderTiming.Default.ErrorAfter.TotalSeconds);
+
+        // kurzes "error" (halb aufgebaute Seite) → weiter abfragen
+        var recovered = await WebReader.PollListAsync(Sequence("""{"state":"error","reason":"unreadable"}""", """{"state":"ok","items":[{"id":"1"}]}"""), "proton", Fast);
+        Assert.Equal((WebReaderOutcome.Ok, 1), (recovered.Outcome, recovered.Items.Count));
+
+        // anhaltendes "error" → Failed nach ErrorAfter, nicht erst nach dem Zeitlimit
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal(WebReaderOutcome.Failed, (await WebReader.PollListAsync(Sequence("""{"state":"error"}"""), "proton", Fast)).Outcome);
+        Assert.InRange(clock.ElapsedMilliseconds, 100, 380);
+
+        clock.Restart();
+        Assert.Equal(WebReaderOutcome.Failed, (await WebReader.PollListAsync(Sequence("""{"state":"unsupported"}"""), "proton", Fast)).Outcome);
+        Assert.True(clock.ElapsedMilliseconds < 90);
+    }
+
+    [Fact]
+    public async Task Polling_CancelThrows_NeverFailed()
+    {
+        using var cts = new CancellationTokenSource();
+        var calls = 0;
+        Func<string, Task<string?>> execute = _ =>
+        {
+            if (++calls == 3) cts.Cancel();
+            return Task.FromResult<string?>(Wrap("""{"state":"loading"}"""));
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WebReader.PollListAsync(execute, "gmail", Fast, cts.Token));
+        Assert.Equal(3, calls);
+
+        using var cts2 = new CancellationTokenSource();
+        calls = 0;
+        Func<string, Task<string?>> message = _ =>
+        {
+            if (++calls == 2) cts2.Cancel();
+            return Task.FromResult<string?>(Wrap(calls == 1 ? """{"state":"ok"}""" : """{"state":"loading"}"""));
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WebReader.OpenAndPollMessageAsync(message, "gmail", "1", Fast, cts2.Token));
+    }
+
+    /// <summary>
+    /// Wie WebAccountService.ExecuteAsync auf dem UI-Thread: Aufrufe außerhalb des Kontext-Threads scheitern still
+    /// (null, wie RPC_E_WRONG_THREAD + catch), echte Aufrufe sind asynchron und kehren in den Kontext zurück.
+    /// </summary>
+    private static Func<string, Task<string?>> UiAffine(SingleThreadContext ui, Action<bool> record, params string[] results)
+    {
+        var i = 0;
+        return async _ =>
+        {
+            var onUi = Thread.CurrentThread == ui.Thread;
+            record(onUi);
+            if (!onUi) return null;
+            await Task.Delay(1);
+            return Wrap(results[Math.Min(i++, results.Length - 1)]);
+        };
+    }
+
+    [Fact]
+    public async Task Polling_StaysOnCallerContext()
+    {
+        using var ui = new SingleThreadContext();
+        var onUi = 0;
+        var offUi = 0;
+        void Record(bool on) { if (on) onUi++; else offUi++; }
+
+        // "error" (halb aufgebaute Seite), dann "ok" → Ok; jeder Aufruf auf dem UI-Thread
+        var list = await ui.Run(() => WebReader.PollListAsync(
+            UiAffine(ui, Record, """{"state":"error","reason":"unreadable"}""", """{"state":"loading"}""", """{"state":"ok","items":[{"id":"1"}]}"""),
+            "proton", Fast));
+        Assert.Equal((WebReaderOutcome.Ok, 1), (list.Outcome, list.Items.Count));
+        Assert.Equal(0, offUi);
+        Assert.Equal(3, onUi);
+
+        // Nachricht: open ok, erste Abfrage loading, zweite ok → Ergebnis
+        onUi = 0;
+        var message = await ui.Run(() => WebReader.OpenAndPollMessageAsync(
+            UiAffine(ui, Record, """{"state":"ok"}""", """{"state":"loading"}""", """{"state":"ok","subject":"S","parts":[{"html":"<p>x</p>"}]}"""),
+            "proton", "1", Fast));
+        Assert.Equal("S", message?.Subject);
+        Assert.Equal(0, offUi);
+        Assert.Equal(3, onUi);
     }
 
     [Fact]
@@ -1007,4 +1093,40 @@ public class NightSkyTests
             File.Delete(path);
         }
     }
+}
+
+/// <summary>Ein einziger Thread mit eigener Nachrichtenschleife – wie der UI-Thread von WinUI.</summary>
+internal sealed class SingleThreadContext : SynchronizationContext, IDisposable
+{
+    private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = new();
+
+    public SingleThreadContext()
+    {
+        Thread = new Thread(() =>
+        {
+            SetSynchronizationContext(this);
+            foreach (var (callback, state) in _queue.GetConsumingEnumerable()) callback(state);
+        }) { IsBackground = true, Name = "UI (Test)" };
+        Thread.Start();
+    }
+
+    public Thread Thread { get; }
+
+    public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
+    public override void Send(SendOrPostCallback d, object? state) => throw new NotSupportedException();
+    public override SynchronizationContext CreateCopy() => this;
+
+    /// <summary><paramref name="work"/> auf dem Kontext-Thread starten und auf das Ergebnis warten.</summary>
+    public Task<T> Run<T>(Func<Task<T>> work)
+    {
+        var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Post(async _ =>
+        {
+            try { done.SetResult(await work()); }
+            catch (Exception ex) { done.SetException(ex); }
+        }, null);
+        return done.Task;
+    }
+
+    public void Dispose() => _queue.CompleteAdding();
 }

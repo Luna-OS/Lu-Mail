@@ -306,7 +306,9 @@ final class AppModel {
         if selection?.accountId != account.id { selection = .web(account.id, "primary") }
         webSiteForSession.insert(account.id)
         if let compose = web.composeUrl {
-            webMail.navigate(account.id, config: web, to: compose)
+            var folder = "primary"
+            if case .some(.web(let id, let current)) = selection, id == account.id { folder = current }
+            webMail.navigate(account.id, config: web, to: compose, holdingFolder: folder)
         } else {
             banner = "Schreibe direkt im Postfach – oben auf „Verfassen“ bzw. „Schreiben“ klicken."
         }

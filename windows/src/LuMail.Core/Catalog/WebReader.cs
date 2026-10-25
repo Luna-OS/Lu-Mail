@@ -66,6 +66,12 @@ public sealed record WebReaderTiming(TimeSpan ListInterval, TimeSpan EmptyAfter,
 {
     public static WebReaderTiming Default { get; } = new(TimeSpan.FromMilliseconds(700), TimeSpan.FromSeconds(4),
         TimeSpan.FromSeconds(20), TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(15));
+
+    /// <summary>
+    /// <c>error</c> der Liste gilt erst als gescheitert, wenn es länger als so lange nach Beginn der Abfrage anhält
+    /// (eine halb aufgebaute Seite meldet kurz <c>error</c>, z. B. die Qualitätsprüfung bei Platzhalterzeilen).
+    /// </summary>
+    public TimeSpan ErrorAfter { get; init; } = TimeSpan.FromSeconds(4);
 }
 
 /// <summary>Wie der Hintergrund-Browser zur Ordneradresse kommt.</summary>
@@ -162,9 +168,14 @@ public static class WebReader
         return WebFolderNavigation.Navigate;
     }
 
+    // WICHTIG: In PollListAsync/OpenAndPollMessageAsync kein ConfigureAwait(false) – execute() ruft WebView2 auf und
+    // muss im Kontext des Aufrufers (UI-Thread) bleiben, sonst scheitert jeder Aufruf nach dem ersten Delay.
+
     /// <summary>
     /// Alle 0,7 s <c>list</c> bis <c>ok</c> mit Einträgen; eine leere Liste gilt erst nach 4 s als leer.
-    /// <c>login</c> → NeedsLogin; <c>error</c>/<c>unsupported</c> oder 20 s ohne Ergebnis → Failed.
+    /// <c>login</c> → NeedsLogin; <c>unsupported</c> → sofort Failed; <c>error</c> erst, wenn es länger als 4 s nach
+    /// Beginn anhält (vorher weiter abfragen); 20 s ohne Ergebnis → Failed. Abbruch über <paramref name="ct"/>
+    /// wirft <see cref="OperationCanceledException"/> (nie Failed).
     /// </summary>
     public static async Task<(WebReaderOutcome Outcome, IReadOnlyList<WebReaderItem> Items)> PollListAsync(
         Func<string, Task<string?>> execute, string reader, WebReaderTiming? timing = null, CancellationToken ct = default)
@@ -175,18 +186,19 @@ public static class WebReader
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var result = DecodeList(await execute(script).ConfigureAwait(false));
+            var result = DecodeList(await execute(script));
             switch (result?.State)
             {
                 case WebReaderState.Ok when result.Items.Count > 0 || clock.Elapsed >= t.EmptyAfter:
                     return (WebReaderOutcome.Ok, result.Items);
                 case WebReaderState.Login:
                     return (WebReaderOutcome.NeedsLogin, Array.Empty<WebReaderItem>());
-                case WebReaderState.Error or WebReaderState.Unsupported:
+                case WebReaderState.Unsupported:
+                case WebReaderState.Error when clock.Elapsed > t.ErrorAfter:
                     return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
             }
             if (clock.Elapsed >= t.ListTimeout) return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
-            await Task.Delay(t.ListInterval, ct).ConfigureAwait(false);
+            await Task.Delay(t.ListInterval, ct);
         }
     }
 
@@ -195,14 +207,14 @@ public static class WebReader
         Func<string, Task<string?>> execute, string reader, string id, WebReaderTiming? timing = null, CancellationToken ct = default)
     {
         var t = timing ?? WebReaderTiming.Default;
-        if (DecodeState(await execute(OpenScript(reader, id)).ConfigureAwait(false)) != WebReaderState.Ok) return null;
+        if (DecodeState(await execute(OpenScript(reader, id))) != WebReaderState.Ok) return null;
         var clock = Stopwatch.StartNew();
         var script = MessageScript(reader);
         while (clock.Elapsed < t.MessageTimeout)
         {
             ct.ThrowIfCancellationRequested();
-            await Task.Delay(t.MessageInterval, ct).ConfigureAwait(false);
-            var result = DecodeMessage(await execute(script).ConfigureAwait(false));
+            await Task.Delay(t.MessageInterval, ct);
+            var result = DecodeMessage(await execute(script));
             if (result?.State == WebReaderState.Ok) return result;
             if (result?.State is WebReaderState.Error or WebReaderState.Login) return null;
         }

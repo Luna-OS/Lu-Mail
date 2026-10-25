@@ -1570,13 +1570,26 @@ public enum SharedResources {
   };
 
   // Proton Mail: Listeneinträge mit data-element-id (= Unterhaltungs- bzw. Nachrichten-ID der Proton-API).
-  // Absender, Betreff, Datum und „ungelesen“ kommen aus dem Mitschnitt der API-Antworten (lu-capture.js),
-  // nur wenn der fehlt, aus dem Seitenaufbau. Der Inhalt steht in einem iframe.
+  // Absender, Betreff, Datum und Anhänge kommen aus dem Mitschnitt der API-Antworten (lu-capture.js), nur wenn der
+  // fehlt, aus dem Seitenaufbau. „Ungelesen“ zeigt die Seite selbst am aktuellsten (Klasse read/unread).
+  // Der Inhalt steht in iframe[data-testid="content-iframe"] innerhalb von article[data-message-id].
   adapters.proton = {
-    rows: function () {
+    allRows: function () {
       return outermost(qa(document, "[data-element-id]"), "data-element-id").filter(visible);
     },
-    fromCapture: function (id, meta) {
+    isPlaceholder: function (row) {
+      return /^placeholder/.test(attr(row, "data-element-id")) || row.classList.contains("item-is-loading");
+    },
+    rows: function () {
+      var self = this;
+      return this.allRows().filter(function (row) { return !self.isPlaceholder(row); });
+    },
+    unreadOf: function (row, fallback) {
+      if (row.classList.contains("unread")) return true;
+      if (row.classList.contains("read")) return false;
+      return fallback;
+    },
+    fromCapture: function (id, meta, row) {
       var senders = meta.Senders || (meta.Sender ? [meta.Sender] : []);
       var names = senders.map(function (p) { return p && (p.Name || p.Address); }).filter(Boolean);
       var time = meta.ContextTime || meta.Time;
@@ -1591,7 +1604,7 @@ public enum SharedResources {
         snippet: "",
         date: shortDate(time),
         dateTitle: longDate(time),
-        unread: Number(unread) > 0,
+        unread: this.unreadOf(row, Number(unread) > 0),
         attachment: Number(attachments) > 0,
       };
     },
@@ -1608,13 +1621,16 @@ public enum SharedResources {
         snippet: "",
         date: text(date),
         dateTitle: attr(date, "datetime") || attr(date, "title"),
-        unread: row.classList.contains("unread") || attr(row, "data-unread") === "true",
+        unread: this.unreadOf(row, attr(row, "data-unread") === "true"),
         attachment: !!q(row, '[data-testid*="attachment"]'),
       }, row);
     },
     list: function () {
       if (hasPasswordField()) return { state: "login" };
+      var all = this.allRows();
       var rows = this.rows();
+      // Platzhalter (Liste lädt noch) nicht als „unlesbar“ werten.
+      if (all.length && !rows.length) return { state: "loading" };
       if (!rows.length && !q(document, '[data-testid="message-list"], [data-testid*="empty-view"], .items-column-list')) {
         return { state: "loading" };
       }
@@ -1623,7 +1639,7 @@ public enum SharedResources {
       var items = rows.map(function (row) {
         var id = attr(row, "data-element-id");
         var meta = (capture.conversations || {})[id] || (capture.messages || {})[id];
-        return meta ? self.fromCapture(id, meta) : self.fromPage(id, row);
+        return meta ? self.fromCapture(id, meta, row) : self.fromPage(id, row);
       });
       return { state: "ok", items: items };
     },
@@ -1634,36 +1650,52 @@ public enum SharedResources {
       }
       return false;
     },
+    // Fertig geladener Inhalt eines Nachrichten-iframes (auch ohne Text, z. B. nur Bilder oder Anhang).
+    frameBody: function (frame) {
+      try {
+        var doc = frame && (frame.contentDocument || (frame.contentWindow && frame.contentWindow.document));
+        if (!doc || !doc.body || doc.readyState === "loading") return "";
+        if (!doc.body.children.length && !text(doc.body)) return "";
+        return cleanHTML(doc.body) || " ";
+      } catch (e) {
+        return "";
+      }
+    },
     message: function () {
-      // Inhalt: alle (gleich-originigen) iframes mit Text – bei Unterhaltungen eins pro aufgeklappter Nachricht.
-      var bodies = qa(document, "iframe").map(frameHTML).filter(function (html) {
-        return html && html.replace(/<[^>]*>/g, "").trim().length > 0;
-      });
-      if (!bodies.length) return { state: "loading" };
-      // Absender/Datum aus dem Mitschnitt: Unterhaltungs-ID steht am Ende der Adresse (…/inbox/<ID>).
       var capture = captured();
-      var id = decodeURIComponent((location.pathname.split("/").filter(Boolean).pop() || ""));
-      var conversation = (capture.conversations || {})[id];
-      var messages = [];
-      var all = capture.messages || {};
-      Object.keys(all).forEach(function (key) {
-        var m = all[key];
-        if (m && (m.ConversationID === id || m.ID === id)) messages.push(m);
-      });
-      messages.sort(function (a, b) { return (a.Time || 0) - (b.Time || 0); });
-      var offset = messages.length - bodies.length;
-      var parts = bodies.map(function (html, index) {
-        var meta = messages[offset + index];
+      var allMessages = capture.messages || {};
+      var self = this;
+      var parts = [];
+      // Jede aufgeklappte Nachricht ist ein article mit ihrer ID – so passen Absender und Datum sicher zum Inhalt.
+      qa(document, "article[data-message-id]").forEach(function (article) {
+        var frame = q(article, 'iframe[data-testid="content-iframe"]');
+        if (!frame) return;
+        var html = self.frameBody(frame);
+        if (!html) return;
+        var meta = allMessages[attr(article, "data-message-id")];
         var sender = meta && meta.Sender;
-        return {
-          from: (sender && (sender.Name || sender.Address)) || "",
-          fromEmail: (sender && sender.Address) || "",
+        var pageSender = first(article, ['[data-testid*="recipient-label"]', '[data-testid*="sender"]']);
+        var pageEmail = first(article, ['[data-testid*="recipient-address"]', '[title*="@"]']);
+        var pageDate = first(article, ["time", '[data-testid*="date"]']);
+        parts.push({
+          from: (sender && (sender.Name || sender.Address)) || text(pageSender),
+          fromEmail: (sender && sender.Address) || emailIn(text(pageEmail)) || emailIn(attr(pageEmail, "title")),
           to: meta && meta.ToList ? meta.ToList.map(function (p) { return p && (p.Name || p.Address); }).filter(Boolean).join(", ") : "",
-          date: meta ? longDate(meta.Time) : "",
+          date: meta ? longDate(meta.Time) : (attr(pageDate, "title") || text(pageDate)),
           html: html,
-        };
+        });
       });
-      var subject = (conversation && conversation.Subject) || (messages.length && messages[messages.length - 1].Subject)
+      // Notlösung ohne article-Kennung: nur die Inhalts-iframes (nicht den Editor des Verfassen-Fensters).
+      if (!parts.length) {
+        qa(document, 'iframe[data-testid="content-iframe"]').forEach(function (frame) {
+          var html = self.frameBody(frame);
+          if (html) parts.push({ from: "", fromEmail: "", to: "", date: "", html: html });
+        });
+      }
+      if (!parts.length) return { state: "loading" };
+      var id = decodeURIComponent((location.pathname.split("/").filter(Boolean).pop() || ""));
+      var conversation = (capture.conversations || {})[id] || allMessages[id];
+      var subject = (conversation && conversation.Subject)
         || text(first(document, ['[data-testid="conversation-header:subject"]', "h1"]));
       return { state: "ok", subject: subject || "", parts: parts };
     },
@@ -1811,18 +1843,30 @@ public enum SharedResources {
     }, 50);
   }
 
+  // Zusammenführen statt ersetzen: Detail-Antworten (…/conversations/<ID>) enthalten z. B. keine Context-Felder
+  // und keine Absenderliste – die Werte aus der Liste sollen erhalten bleiben.
   function put(map, item) {
     if (!item || !item.ID) return;
-    if (count > LIMIT) {
-      store = { conversations: {}, messages: {} };
-      count = 0;
+    var next = slim(item);
+    var old = store[map][item.ID];
+    if (old) {
+      Object.keys(next).forEach(function (key) {
+        if (next[key] === undefined || next[key] === null) next[key] = old[key];
+      });
+    } else {
+      count++;
     }
-    if (!store[map][item.ID]) count++;
-    store[map][item.ID] = slim(item);
+    store[map][item.ID] = next;
   }
 
   function take(url, data) {
     if (!data || typeof data !== "object") return;
+    // Speicher begrenzen – vor der Antwort leeren, damit sie selbst immer vollständig ankommt.
+    var incoming = (data.Conversations || []).length + (data.Messages || []).length + 2;
+    if (count + incoming > LIMIT) {
+      store = { conversations: {}, messages: {} };
+      count = 0;
+    }
     (data.Conversations || []).forEach(function (c) { put("conversations", c); });
     (data.Messages || []).forEach(function (m) { put("messages", m); });
     if (data.Conversation) put("conversations", data.Conversation);
@@ -1830,11 +1874,20 @@ public enum SharedResources {
     save();
   }
 
+  // Proton ruft fetch mit einem URL-Objekt auf (new URL(…)), andere mit Text oder Request.
+  function urlOf(input) {
+    if (!input) return "";
+    if (typeof input === "string") return input;
+    if (typeof Request !== "undefined" && input instanceof Request) return input.url;
+    if (typeof input.href === "string") return input.href;
+    return String(input);
+  }
+
   var originalFetch = window.fetch;
   if (typeof originalFetch === "function") {
     window.fetch = function (input, init) {
-      var url = typeof input === "string" ? input : (input && input.url) || "";
-      var promise = originalFetch.apply(this, arguments);
+      var url = urlOf(input);
+      var promise = originalFetch.apply(window, arguments);
       if (PATTERN.test(url)) {
         promise.then(function (response) {
           try {
@@ -1849,7 +1902,7 @@ public enum SharedResources {
   var originalOpen = XMLHttpRequest.prototype.open;
   var originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__luUrl = String(url || "");
+    this.__luUrl = urlOf(url);
     return originalOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function () {

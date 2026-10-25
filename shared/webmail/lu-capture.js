@@ -48,18 +48,30 @@
     }, 50);
   }
 
+  // Zusammenführen statt ersetzen: Detail-Antworten (…/conversations/<ID>) enthalten z. B. keine Context-Felder
+  // und keine Absenderliste – die Werte aus der Liste sollen erhalten bleiben.
   function put(map, item) {
     if (!item || !item.ID) return;
-    if (count > LIMIT) {
-      store = { conversations: {}, messages: {} };
-      count = 0;
+    var next = slim(item);
+    var old = store[map][item.ID];
+    if (old) {
+      Object.keys(next).forEach(function (key) {
+        if (next[key] === undefined || next[key] === null) next[key] = old[key];
+      });
+    } else {
+      count++;
     }
-    if (!store[map][item.ID]) count++;
-    store[map][item.ID] = slim(item);
+    store[map][item.ID] = next;
   }
 
   function take(url, data) {
     if (!data || typeof data !== "object") return;
+    // Speicher begrenzen – vor der Antwort leeren, damit sie selbst immer vollständig ankommt.
+    var incoming = (data.Conversations || []).length + (data.Messages || []).length + 2;
+    if (count + incoming > LIMIT) {
+      store = { conversations: {}, messages: {} };
+      count = 0;
+    }
     (data.Conversations || []).forEach(function (c) { put("conversations", c); });
     (data.Messages || []).forEach(function (m) { put("messages", m); });
     if (data.Conversation) put("conversations", data.Conversation);
@@ -67,11 +79,20 @@
     save();
   }
 
+  // Proton ruft fetch mit einem URL-Objekt auf (new URL(…)), andere mit Text oder Request.
+  function urlOf(input) {
+    if (!input) return "";
+    if (typeof input === "string") return input;
+    if (typeof Request !== "undefined" && input instanceof Request) return input.url;
+    if (typeof input.href === "string") return input.href;
+    return String(input);
+  }
+
   var originalFetch = window.fetch;
   if (typeof originalFetch === "function") {
     window.fetch = function (input, init) {
-      var url = typeof input === "string" ? input : (input && input.url) || "";
-      var promise = originalFetch.apply(this, arguments);
+      var url = urlOf(input);
+      var promise = originalFetch.apply(window, arguments);
       if (PATTERN.test(url)) {
         promise.then(function (response) {
           try {
@@ -86,7 +107,7 @@
   var originalOpen = XMLHttpRequest.prototype.open;
   var originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url) {
-    this.__luUrl = String(url || "");
+    this.__luUrl = urlOf(url);
     return originalOpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function () {

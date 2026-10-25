@@ -27,14 +27,20 @@ final class WebMailService {
 
     /// Lu-Ansicht (§21): gelesene Listen je Konto und Ordner (`key(_:_:)`).
     private(set) var readerItems: [String: [WebReader.Item]] = [:]
-    private(set) var readerLoading: Set<String> = []
+    /// Laufende Ladevorgänge je Ordner (Zähler: Neu laden kann einen zweiten starten, solange der erste läuft).
+    private(set) var readerLoadCount: [String: Int] = [:]
+
+    func isLoadingReader(_ key: String) -> Bool { (readerLoadCount[key] ?? 0) > 0 }
     /// Warteschlange je Konto, damit Liste und Nachricht nicht gleichzeitig im Browser arbeiten.
     @ObservationIgnored private var queues: [UUID: Task<Void, Never>] = [:]
     /// Konten, deren Seite beim nächsten Umschalten auf die Webseite stehen bleiben soll (offene Nachricht, Verfassen).
-    @ObservationIgnored private var holdPage: Set<UUID> = []
+    /// Gilt nur für den Ordner, in dem die Seite gehalten wurde, und nur kurz (beim Umschalten auf die Webseite).
+    @ObservationIgnored private var holdPage: [UUID: (folder: String, until: Date)] = [:]
 
     enum ReaderOutcome: Sendable {
         case items([WebReader.Item])
+        /// Abgebrochen (z. B. anderer Ordner gewählt) – nichts tun.
+        case cancelled
         case needsLogin
         case failed
     }
@@ -146,7 +152,7 @@ final class WebMailService {
     /// Zeigt einen Ordner des Postfachs (z. B. `promotions` → Gmail-Tab „Werbung“).
     func open(_ accountId: UUID, config: WebConfig, folder: String) {
         let entry = entry(for: accountId, config: config)
-        if holdPage.remove(accountId) != nil { return }
+        if let hold = holdPage.removeValue(forKey: accountId), hold.folder == folder, hold.until > Date() { return }
         let target = config.folderURL(folder)
         // Schon in diesem Ordner (auch in einer seiner Nachrichten)?
         if entry.webView.url?.absoluteString.hasPrefix(target) == true { return }
@@ -161,8 +167,8 @@ final class WebMailService {
     func currentURL(_ accountId: UUID) -> URL? { entries[accountId]?.webView.url }
 
     /// Eine Seite des Anbieters öffnen (z. B. „Verfassen“).
-    func navigate(_ accountId: UUID, config: WebConfig, to url: String) {
-        holdPage.insert(accountId)
+    func navigate(_ accountId: UUID, config: WebConfig, to url: String, holdingFolder folder: String) {
+        holdPage[accountId] = (folder, Date().addingTimeInterval(5))
         load(entry(for: accountId, config: config), url)
     }
 
@@ -208,9 +214,13 @@ final class WebMailService {
     func loadList(_ accountId: UUID, config: WebConfig, folder: String) async -> ReaderOutcome {
         guard let reader = config.reader else { return .failed }
         let key = Self.key(accountId, folder)
-        readerLoading.insert(key)
-        defer { readerLoading.remove(key) }
+        readerLoadCount[key, default: 0] += 1
+        defer {
+            let remaining = (readerLoadCount[key] ?? 1) - 1
+            readerLoadCount[key] = remaining > 0 ? remaining : nil
+        }
         return await serial(accountId) { [self] in
+            if Task.isCancelled { return .cancelled }
             let entry = entry(for: accountId, config: config)
             let target = config.folderURL(folder)
             let current = entry.webView.url?.absoluteString ?? ""
@@ -226,6 +236,7 @@ final class WebMailService {
             let start = Date()
             while Date().timeIntervalSince(start) < 20 {
                 try? await Task.sleep(for: .milliseconds(700))
+                if Task.isCancelled { return .cancelled }
                 let elapsed = Date().timeIntervalSince(start)
                 let url = entry.webView.url?.absoluteString ?? ""
                 if elapsed > 6, !entry.webView.isLoading, !config.loggedInPrefixes.isEmpty, !config.isLoggedIn(url: url) {
@@ -239,7 +250,10 @@ final class WebMailService {
                     return .items(result.items)
                 case .login:
                     return .needsLogin
-                case .error, .unsupported:
+                case .unsupported:
+                    return .failed
+                case .error where elapsed > 4:
+                    // Erst nach ein paar Sekunden aufgeben – kurz nach dem Laden ist die Seite oft noch unfertig.
                     return .failed
                 default:
                     continue
@@ -261,6 +275,7 @@ final class WebMailService {
             var latest: WebReader.MessageResult?
             while Date().timeIntervalSince(start) < 15 {
                 try? await Task.sleep(for: .milliseconds(500))
+                if Task.isCancelled { return nil }
                 guard let message = WebReader.decode(WebReader.MessageResult.self,
                                                      from: await evaluate(entry, WebReader.messageScript(reader: reader))),
                       message.state == .ok, !message.parts.isEmpty else { continue }
@@ -274,11 +289,11 @@ final class WebMailService {
     }
 
     /// Öffnet eine Nachricht im Webmail (für „In der Webseite öffnen“).
-    func openInPage(_ accountId: UUID, config: WebConfig, item: WebReader.Item) async {
+    func openInPage(_ accountId: UUID, config: WebConfig, folder: String, item: WebReader.Item) async {
         guard let reader = config.reader else { return }
         await serial(accountId) { [self] in
             let entry = entry(for: accountId, config: config)
-            holdPage.insert(accountId)
+            holdPage[accountId] = (folder, Date().addingTimeInterval(5))
             _ = await evaluate(entry, WebReader.openScript(reader: reader, id: item.id))
         }
     }
@@ -305,7 +320,12 @@ final class WebMailService {
             return await operation()
         }
         queues[accountId] = Task { @MainActor in _ = await task.value }
-        return await task.value
+        // Wird der Aufrufer abgebrochen (anderer Ordner), bricht auch die Arbeit im Browser ab.
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     /// Führt JavaScript in einer eigenen Content-World aus (die Webseite sieht den Leser nicht).
