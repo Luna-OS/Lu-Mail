@@ -409,6 +409,7 @@ public sealed partial class MainPage : Page
     {
         ReaderPlaceholder.Visibility = Visibility.Collapsed;
         ReaderPanel.Visibility = Visibility.Visible;
+        UpdateReaderBackground();
 
         ReaderSubject.Text = item.ThreadCount > 1 ? $"{item.Subject} ({item.ThreadCount})" : item.Subject;
         var from = detail?.From;
@@ -536,6 +537,7 @@ public sealed partial class MainPage : Page
         _selectedKey = null;
         ReaderPanel.Visibility = Visibility.Collapsed;
         ReaderPlaceholder.Visibility = Visibility.Visible;
+        UpdateReaderBackground();
         ReaderLoading.IsActive = false;
         if (_webViewReady)
         {
@@ -958,6 +960,8 @@ public sealed partial class MainPage : Page
     // ======================================================== Nachthimmel (§22)
 
     private bool _skyWelcome;
+    private bool _skyShown;
+    private bool _skyDark;
 
     /// <summary>
     /// Himmel und Flächen abstimmen: dunkel → Himmel hinter durchscheinender Seitenleiste/Liste (72 %), Lesebereich
@@ -970,6 +974,8 @@ public sealed partial class MainPage : Page
         var welcome = WelcomePanel.Visibility == Visibility.Visible;
         _skyWelcome = welcome;
         var show = enabled && (dark || welcome);
+        _skyShown = show;
+        _skyDark = dark;
 
         var palette = _s.Theme.Palette(_s.Settings.ThemeVariant, dark: true, _s.Settings.Accent);
         var moon = palette.TryGetValue("moon", out var m) ? m : "#F5D06F";
@@ -986,8 +992,20 @@ public sealed partial class MainPage : Page
         ListPane.Background = show && welcome ? transparent
             : show && dark ? Translucent("LuBackground", LuMail.Core.Catalog.NightSky.PaneOpacity)
             : ThemeBrush("LuBackground");
-        ReaderPane.Background = show && welcome ? transparent : ThemeBrush("LuSurface");
         ReaderPlaceholder.Opacity = show && welcome ? 0 : 1;
+        UpdateReaderBackground();
+    }
+
+    /// <summary>
+    /// Lesebereich: mit geöffneter Nachricht deckend; ohne (leerer Zustand, auch in der Lu-Ansicht) im dunklen Modus
+    /// nur 15 % deckend, damit der Mond durchscheint; Willkommensbildschirm durchsichtig; heller Modus deckend.
+    /// </summary>
+    private void UpdateReaderBackground()
+    {
+        var open = ReaderPanel.Visibility == Visibility.Visible;
+        ReaderPane.Background = _skyShown && _skyWelcome && !open ? new SolidColorBrush(Microsoft.UI.Colors.Transparent)
+            : _skyShown && _skyDark && !open ? Translucent("LuSurface", LuMail.Core.Catalog.NightSky.EmptyReaderOpacity)
+            : ThemeBrush("LuSurface");
     }
 
     /// <summary>Fenster minimiert/verborgen → Himmel anhalten.</summary>

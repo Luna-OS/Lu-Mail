@@ -52,6 +52,9 @@ public static class NightSky
     /// <summary>Seitenleiste und Nachrichtenliste im dunklen Modus: 72 % deckend.</summary>
     public const double PaneOpacity = 0.72;
 
+    /// <summary>Lesebereich ohne geöffnete Nachricht im dunklen Modus: nur 15 % deckend – dort steht der Mond.</summary>
+    public const double EmptyReaderOpacity = 0.15;
+
     /// <summary>Farbe einer Sternfärbung.</summary>
     public static string TintColor(SkyStarTint tint) => tint switch
     {
