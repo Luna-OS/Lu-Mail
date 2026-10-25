@@ -4,29 +4,30 @@ import SwiftUI
 /// Animierter Nachthimmel mit Mond (docs/FUNKTIONEN.md §22).
 ///
 /// Mehrere Ebenen (Seitenleiste, Liste, leerer Lesebereich) zeichnen denselben Himmel in Fensterkoordinaten,
-/// damit er über die Spalten hinweg nahtlos wirkt. Die Fenstergröße kommt über `\.skyCanvasSize`.
+/// damit er über die Spalten hinweg nahtlos wirkt. Lage und Fenstergröße liefert AppKit (`WindowFrameReader`) –
+/// die Spalten von NavigationSplitView liegen in eigenen Host-Views, SwiftUI-Koordinaten passen dort nicht zusammen.
 struct NightSkyLayer: View {
     /// Auch im hellen Modus zeigen (Willkommens- und Sperrbildschirm).
     var alwaysVisible = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.skyCanvasSize) private var canvasSize
     @State private var theme = ThemeSettings.shared
+    @State private var placement = WindowFrameReader.Placement()
 
     var body: some View {
         if theme.nightSky && (alwaysVisible || colorScheme == .dark) {
-            GeometryReader { proxy in
-                let frame = proxy.frame(in: .global)
-                let sky = canvasSize == .zero ? proxy.size : canvasSize
-                let origin = canvasSize == .zero ? .zero : frame.origin
-                let haze = LuTheme.accent.opacity(0.08)
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
-                    Canvas { context, _ in
-                        NightSky.draw(in: &context, origin: origin, sky: sky, haze: haze,
-                                      time: timeline.date.timeIntervalSinceReferenceDate)
-                    }
+            let haze = LuTheme.accent.opacity(0.08)
+            let current = placement
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
+                Canvas { context, size in
+                    let known = current.window != .zero
+                    NightSky.draw(in: &context, canvas: size,
+                                  origin: known ? current.frame.origin : .zero,
+                                  sky: known ? current.window : size,
+                                  haze: haze, time: timeline.date.timeIntervalSinceReferenceDate)
                 }
             }
+            .background(WindowFrameReader(placement: $placement))
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -34,15 +35,67 @@ struct NightSkyLayer: View {
     }
 }
 
-private struct SkyCanvasSizeKey: EnvironmentKey {
-    static let defaultValue: CGSize = .zero
-}
+/// Meldet die Lage einer Ebene im Fenster (oben links = 0,0) und die Größe des Fensterinhalts.
+struct WindowFrameReader: NSViewRepresentable {
+    struct Placement: Equatable {
+        var frame: CGRect = .zero
+        var window: CGSize = .zero
+    }
 
-extension EnvironmentValues {
-    /// Größe des Fensterinhalts – der gemeinsame Himmel für alle Ebenen.
-    var skyCanvasSize: CGSize {
-        get { self[SkyCanvasSizeKey.self] }
-        set { self[SkyCanvasSizeKey.self] = newValue }
+    @Binding var placement: Placement
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.onChange = { newValue in
+            // Nicht während eines SwiftUI-Updates ändern.
+            DispatchQueue.main.async { if placement != newValue { placement = newValue } }
+        }
+        return view
+    }
+
+    func updateNSView(_ view: ReaderView, context: Context) {
+        view.report()
+    }
+
+    final class ReaderView: NSView {
+        var onChange: ((Placement) -> Void)?
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            observers = []
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window {
+                // Ändert sich nur die Fenstergröße (nicht diese Ebene), verschiebt sich trotzdem der Himmel.
+                observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: window,
+                                                                        queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report() }
+                })
+            }
+            report()
+        }
+
+        override func layout() {
+            super.layout()
+            report()
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            report()
+        }
+
+        func report() {
+            guard let content = window?.contentView else { return }
+            let rect = convert(bounds, to: content)
+            let top = content.isFlipped ? rect.minY : content.bounds.height - rect.maxY
+            onChange?(Placement(frame: CGRect(x: rect.minX, y: top, width: rect.width, height: rect.height),
+                                window: content.bounds.size))
+        }
     }
 }
 
@@ -75,24 +128,26 @@ enum NightSky {
     private static let moonGradient = Gradient(colors: [Color(hex: "#FFF4D6"), Color(hex: "#F5D06F")])
     private static let crater = Color(hex: "#D9AE4A").opacity(0.35)
 
-    static func draw(in context: inout GraphicsContext, origin: CGPoint, sky: CGSize, haze: Color, time: TimeInterval) {
+    static func draw(in context: inout GraphicsContext, canvas: CGSize, origin: CGPoint, sky: CGSize, haze: Color,
+                     time: TimeInterval) {
         let w = sky.width
         let h = sky.height
         guard w > 0, h > 0 else { return }
         let skyRect = CGRect(x: -origin.x, y: -origin.y, width: w, height: h)
+        let canvasRect = CGRect(origin: .zero, size: canvas)
 
-        // Himmel und violetter Schleier
-        context.fill(Path(skyRect), with: .linearGradient(
+        // Himmel und violetter Schleier – die ganze Ebene füllen (der Verlauf richtet sich nach dem Fenster).
+        context.fill(Path(canvasRect), with: .linearGradient(
             skyGradient,
             startPoint: CGPoint(x: skyRect.midX, y: skyRect.minY), endPoint: CGPoint(x: skyRect.midX, y: skyRect.maxY)))
         let hazeCenter = CGPoint(x: skyRect.minX + w * 0.15, y: skyRect.minY + h * 0.95)
-        context.fill(Path(skyRect), with: .radialGradient(
+        context.fill(Path(canvasRect), with: .radialGradient(
             Gradient(colors: [haze, .clear]),
             center: hazeCenter, startRadius: 0, endRadius: max(w, h) * 0.6))
 
-        // Sterne (funkeln, die Ebene driftet langsam)
+        // Sterne (funkeln, die Ebene driftet langsam) – nur die in dieser Ebene sichtbaren zeichnen.
         let drift = 12 * sin(time * 2 * .pi / 90)
-        let visible = CGRect(origin: .zero, size: CGSize(width: w, height: h)).offsetBy(dx: -origin.x, dy: -origin.y)
+        let visible = canvasRect
         for star in stars {
             let point = CGPoint(x: skyRect.minX + star.x * w + drift, y: skyRect.minY + star.y * h)
             guard visible.insetBy(dx: -6, dy: -6).contains(point) else { continue }
@@ -131,11 +186,11 @@ enum NightSky {
         }
     }
 
-    /// Eine Sternschnuppe pro 13,5-s-Fenster zu zufälliger Zeit (Abstände etwa 9–18 s), 0,9 s lang.
+    /// Eine Sternschnuppe pro 13,5-s-Fenster, Start zufällig in den ersten 4,5 s – Abstände also 9–18 s; 0,9 s lang.
     private static func drawShootingStar(in context: inout GraphicsContext, skyRect: CGRect, time: TimeInterval) {
         let window = 13.5
         let index = floor(time / window)
-        let offset = hash(index, 1) * (window - 0.9)
+        let offset = hash(index, 1) * 4.5
         let progress = (time - index * window - offset) / 0.9
         guard progress >= 0, progress <= 1 else { return }
         let start = CGPoint(x: skyRect.minX + skyRect.width * (0.3 + 0.6 * hash(index, 2)),

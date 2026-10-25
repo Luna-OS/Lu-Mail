@@ -253,7 +253,7 @@ struct WebInboxView: View {
                     HStack {
                         Button {
                             Task {
-                                await model.webMail.openInPage(account.id, config: web, item: item)
+                                await model.webMail.openInPage(account.id, config: web, folder: folder, item: item)
                                 model.setShowsWebsite(true, for: account.id)
                             }
                         } label: {
@@ -330,9 +330,14 @@ struct WebInboxView: View {
         while !Task.isCancelled {
             // Während eine Nachricht offen ist, bleibt der Browser bei ihr.
             if selectedId == nil {
-                switch await model.webMail.loadList(account.id, config: web, folder: folder) {
+                let outcome = await model.webMail.loadList(account.id, config: web, folder: folder)
+                // Inzwischen anderer Ordner gewählt? Dann zählt das Ergebnis nicht mehr.
+                guard !Task.isCancelled else { return }
+                switch outcome {
                 case .items:
                     break
+                case .cancelled:
+                    return
                 case .needsLogin:
                     model.fallBackToWebsite(account.id, reason: "Bitte bei \(provider.name) anmelden – danach zurück zur Lu-Ansicht.")
                     return

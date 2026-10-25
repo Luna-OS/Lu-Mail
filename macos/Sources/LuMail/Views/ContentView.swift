@@ -5,7 +5,6 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var theme = ThemeSettings.shared
     @State private var lock = AppLock.shared
-    @State private var windowSize: CGSize = .zero
 
     var body: some View {
         @Bindable var model = model
@@ -26,14 +25,6 @@ struct ContentView: View {
         }
         .id(theme.revision)
         .background(LuTheme.background)
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear { windowSize = proxy.size }
-                    .onChange(of: proxy.size) { _, size in windowSize = size }
-            }
-        }
-        .environment(\.skyCanvasSize, windowSize)
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Suchen (Enter: auch auf dem Server)")
         .onSubmit(of: .search) { Task { await model.searchOnServer() } }
         .onChange(of: model.searchText) { _, newValue in if newValue.isEmpty { model.serverResults = [] } }
@@ -129,6 +120,7 @@ struct BannerView: View {
 /// Sperrbildschirm (Touch ID / Passwort).
 struct LockView: View {
     @State private var lock = AppLock.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 16) {
@@ -147,7 +139,14 @@ struct LockView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThickMaterial)
+        .background {
+            ZStack {
+                Rectangle().fill(.ultraThickMaterial)
+                NightSkyLayer(alwaysVisible: true)
+            }
+            .ignoresSafeArea()
+        }
+        .environment(\.colorScheme, ThemeSettings.shared.nightSky ? .dark : colorScheme)
         .onAppear { lock.unlock() }
     }
 }
@@ -155,6 +154,7 @@ struct LockView: View {
 /// Erster Start: noch kein Konto.
 struct WelcomeView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 18) {
@@ -196,5 +196,7 @@ struct WelcomeView: View {
             }
             .ignoresSafeArea()
         }
+        // Über dem Nachthimmel immer helle Schrift (sonst im hellen Modus dunkel auf dunkel).
+        .environment(\.colorScheme, ThemeSettings.shared.nightSky ? .dark : colorScheme)
     }
 }

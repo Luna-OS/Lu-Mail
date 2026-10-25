@@ -100,12 +100,16 @@ const pages = {
     return route.fulfill({ contentType: "text/html", body: `<html><head><script>${capture}</script></head><body>
       <div data-testid="message-list">
         <div data-element-id="conv1" class="item-container unread"><span>Proton</span></div>
-        <div data-element-id="conv2" class="item-container read"><span>x@y.de</span></div>
+        <div data-element-id="conv2" class="item-container"><span>x@y.de</span></div>
       </div>
-      <iframe srcdoc="<p>Hallo <b>Alex</b></p><script>bad()</script>"></iframe>
+      <article data-testid="message-view-0" data-message-id="m1">
+        <iframe data-testid="content-iframe" srcdoc="<p>Hallo <b>Alex</b></p><script>bad()</script>"></iframe>
+      </article>
+      <iframe data-testid="rooster-iframe" srcdoc="<p>Sent with Proton Mail secure email.</p>"></iframe>
       <script>
-        fetch("/api/mail/v4/conversations?Page=0&LabelID=0").then(r => r.json());
-        var x = new XMLHttpRequest(); x.open("GET", "/api/mail/v4/conversations/conv1"); x.send();
+        // Proton ruft fetch mit einem URL-Objekt auf.
+        fetch(new URL("/api/mail/v4/conversations?Page=0&LabelID=0", location.origin)).then(r => r.json());
+        var x = new XMLHttpRequest(); x.open("GET", new URL("/api/mail/v4/conversations/conv1", location.origin)); x.send();
       </script></body></html>` });
   });
   await page.goto("https://mail.proton.me/u/0/inbox/conv1");
@@ -125,8 +129,23 @@ const pages = {
   r = JSON.parse(await page.evaluate('LuWebmail.message("proton")'));
   assert.strictEqual(r.state, "ok");
   assert.strictEqual(r.subject, "Willkommen");
+  assert.strictEqual(r.parts.length, 1, "nur die Nachricht, nicht der Editor");
   assert.deepStrictEqual([r.parts[0].from, r.parts[0].fromEmail, r.parts[0].to], ["Proton", "no-reply@proton.me", "Alex"]);
   assert.ok(r.parts[0].html.includes("<b>Alex</b>") && !r.parts[0].html.includes("<script"));
+
+  // Gelesen auf der Seite (Klasse "read") schlägt den älteren Zähler aus dem Mitschnitt.
+  await page.evaluate(() => document.querySelector('[data-element-id="conv1"]').className = "item-container read");
+  r = JSON.parse(await page.evaluate('LuWebmail.list("proton")'));
+  assert.strictEqual(r.items[0].unread, false);
+
+  // Nachricht nur mit Bild (ohne Text) lädt trotzdem.
+  await page.evaluate(() => {
+    document.querySelector('article iframe').srcdoc = '<div id="proton-root"><img src="x.png"></div>';
+  });
+  await page.waitForFunction(() => document.querySelector('article iframe').contentDocument.querySelector("img"));
+  r = JSON.parse(await page.evaluate('LuWebmail.message("proton")'));
+  assert.strictEqual(r.state, "ok");
+  assert.ok(r.parts[0].html.includes("<img"));
   await page.unroute("https://mail.proton.me/**");
 
   r = await call(pages.mailru, 'LuWebmail.list("mailru")');
@@ -138,6 +157,11 @@ const pages = {
   r = await call(`<div data-testid="message-list"><div data-element-id="a"></div><div data-element-id="b"></div></div>`,
                  'LuWebmail.list("proton")');
   assert.deepStrictEqual([r.state, r.reason], ["error", "unreadable"]);
+
+  // Platzhalter beim Laden der Proton-Liste → "loading" (nicht "unreadable").
+  r = await call(`<div data-testid="message-list"><div data-element-id="placeholder-0" class="item-container unread item-is-loading">&nbsp;</div>
+      <div data-element-id="placeholder-1" class="item-container item-is-loading">&nbsp;</div></div>`, 'LuWebmail.list("proton")');
+  assert.strictEqual(r.state, "loading");
 
   r = await call(pages.login, 'LuWebmail.list("gmail")');
   assert.strictEqual(r.state, "login");
