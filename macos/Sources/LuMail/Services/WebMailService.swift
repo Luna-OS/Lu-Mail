@@ -27,7 +27,10 @@ final class WebMailService {
 
     /// Lu-Ansicht (§21): gelesene Listen je Konto und Ordner (`key(_:_:)`).
     private(set) var readerItems: [String: [WebReader.Item]] = [:]
-    private(set) var readerLoading: Set<String> = []
+    /// Laufende Ladevorgänge je Ordner (Zähler: Neu laden kann einen zweiten starten, solange der erste läuft).
+    private(set) var readerLoadCount: [String: Int] = [:]
+
+    func isLoadingReader(_ key: String) -> Bool { (readerLoadCount[key] ?? 0) > 0 }
     /// Warteschlange je Konto, damit Liste und Nachricht nicht gleichzeitig im Browser arbeiten.
     @ObservationIgnored private var queues: [UUID: Task<Void, Never>] = [:]
     /// Konten, deren Seite beim nächsten Umschalten auf die Webseite stehen bleiben soll (offene Nachricht, Verfassen).
@@ -211,8 +214,11 @@ final class WebMailService {
     func loadList(_ accountId: UUID, config: WebConfig, folder: String) async -> ReaderOutcome {
         guard let reader = config.reader else { return .failed }
         let key = Self.key(accountId, folder)
-        readerLoading.insert(key)
-        defer { readerLoading.remove(key) }
+        readerLoadCount[key, default: 0] += 1
+        defer {
+            let remaining = (readerLoadCount[key] ?? 1) - 1
+            readerLoadCount[key] = remaining > 0 ? remaining : nil
+        }
         return await serial(accountId) { [self] in
             if Task.isCancelled { return .cancelled }
             let entry = entry(for: accountId, config: config)

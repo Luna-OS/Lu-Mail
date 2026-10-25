@@ -48,10 +48,20 @@
     }, 50);
   }
 
+  // Zusammenführen statt ersetzen: Detail-Antworten (…/conversations/<ID>) enthalten z. B. keine Context-Felder
+  // und keine Absenderliste – die Werte aus der Liste sollen erhalten bleiben.
   function put(map, item) {
     if (!item || !item.ID) return;
-    if (!store[map][item.ID]) count++;
-    store[map][item.ID] = slim(item);
+    var next = slim(item);
+    var old = store[map][item.ID];
+    if (old) {
+      Object.keys(next).forEach(function (key) {
+        if (next[key] === undefined || next[key] === null) next[key] = old[key];
+      });
+    } else {
+      count++;
+    }
+    store[map][item.ID] = next;
   }
 
   function take(url, data) {

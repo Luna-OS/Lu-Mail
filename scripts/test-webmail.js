@@ -108,8 +108,12 @@ const pages = {
       <iframe data-testid="rooster-iframe" srcdoc="<p>Sent with Proton Mail secure email.</p>"></iframe>
       <script>
         // Proton ruft fetch mit einem URL-Objekt auf.
-        fetch(new URL("/api/mail/v4/conversations?Page=0&LabelID=0", location.origin)).then(r => r.json());
-        var x = new XMLHttpRequest(); x.open("GET", new URL("/api/mail/v4/conversations/conv1", location.origin)); x.send();
+        // Erst die Liste, dann die Details – die Details dürfen Absender & Co. aus der Liste nicht löschen.
+        fetch(new URL("/api/mail/v4/conversations?Page=0&LabelID=0", location.origin)).then(r => r.json()).then(() => {
+          setTimeout(() => {
+            var x = new XMLHttpRequest(); x.open("GET", new URL("/api/mail/v4/conversations/conv1", location.origin)); x.send();
+          }, 120);
+        });
       </script></body></html>` });
   });
   await page.goto("https://mail.proton.me/u/0/inbox/conv1");

@@ -75,6 +75,15 @@ struct WindowFrameReader: NSViewRepresentable {
                                                                         queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.report() }
                 })
+                // Seitenleiste ein-/ausklappen oder Spalten ziehen: die Ebene wandert, ohne ihre Größe zu ändern.
+                observers.append(NotificationCenter.default.addObserver(forName: NSSplitView.didResizeSubviewsNotification, object: nil,
+                                                                        queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated {
+                        guard let self, (note.object as? NSView)?.window === self.window else { return }
+                        // Erst nach dem Layout-Durchlauf messen, sonst stimmen die Rahmen noch nicht.
+                        DispatchQueue.main.async { [weak self] in self?.report() }
+                    }
+                })
             }
             report()
         }
