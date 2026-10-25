@@ -168,6 +168,9 @@ public static class WebReader
         return WebFolderNavigation.Navigate;
     }
 
+    // WICHTIG: In PollListAsync/OpenAndPollMessageAsync kein ConfigureAwait(false) – execute() ruft WebView2 auf und
+    // muss im Kontext des Aufrufers (UI-Thread) bleiben, sonst scheitert jeder Aufruf nach dem ersten Delay.
+
     /// <summary>
     /// Alle 0,7 s <c>list</c> bis <c>ok</c> mit Einträgen; eine leere Liste gilt erst nach 4 s als leer.
     /// <c>login</c> → NeedsLogin; <c>unsupported</c> → sofort Failed; <c>error</c> erst, wenn es länger als 4 s nach
@@ -183,7 +186,7 @@ public static class WebReader
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var result = DecodeList(await execute(script).ConfigureAwait(false));
+            var result = DecodeList(await execute(script));
             switch (result?.State)
             {
                 case WebReaderState.Ok when result.Items.Count > 0 || clock.Elapsed >= t.EmptyAfter:
@@ -195,7 +198,7 @@ public static class WebReader
                     return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
             }
             if (clock.Elapsed >= t.ListTimeout) return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
-            await Task.Delay(t.ListInterval, ct).ConfigureAwait(false);
+            await Task.Delay(t.ListInterval, ct);
         }
     }
 
@@ -204,14 +207,14 @@ public static class WebReader
         Func<string, Task<string?>> execute, string reader, string id, WebReaderTiming? timing = null, CancellationToken ct = default)
     {
         var t = timing ?? WebReaderTiming.Default;
-        if (DecodeState(await execute(OpenScript(reader, id)).ConfigureAwait(false)) != WebReaderState.Ok) return null;
+        if (DecodeState(await execute(OpenScript(reader, id))) != WebReaderState.Ok) return null;
         var clock = Stopwatch.StartNew();
         var script = MessageScript(reader);
         while (clock.Elapsed < t.MessageTimeout)
         {
             ct.ThrowIfCancellationRequested();
-            await Task.Delay(t.MessageInterval, ct).ConfigureAwait(false);
-            var result = DecodeMessage(await execute(script).ConfigureAwait(false));
+            await Task.Delay(t.MessageInterval, ct);
+            var result = DecodeMessage(await execute(script));
             if (result?.State == WebReaderState.Ok) return result;
             if (result?.State is WebReaderState.Error or WebReaderState.Login) return null;
         }

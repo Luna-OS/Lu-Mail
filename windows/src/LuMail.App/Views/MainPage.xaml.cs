@@ -1103,9 +1103,12 @@ public sealed partial class MainPage : Page
         }
         catch (Exception ex)
         {
-            ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
+            if (IsCurrentLuSelection(item)) ShowMessage("Das Webmail konnte nicht geladen werden (WebView2): " + ex.Message, isError: true);
             return;
         }
+        // Verspätete Fortsetzung für einen inzwischen verlassenen Ordner: nichts tun (vor allem nicht die Abfrage
+        // des aktuellen Ordners abbrechen).
+        if (!IsCurrentLuSelection(item)) return;
         await LoadWebListAsync(item, account, keepSelection: false);
     }
 
@@ -1132,6 +1135,7 @@ public sealed partial class MainPage : Page
     /// <summary>Liste über den Web-Leser holen (§21) – bei Fehler Webseite, bei Abmeldung Webseite zum Anmelden.</summary>
     private async Task LoadWebListAsync(SidebarItem item, Account account, bool keepSelection)
     {
+        if (!IsCurrentLuSelection(item)) return; // Abbruch-Handle gehört immer zur aktuellen Auswahl
         var version = ++_webListVersion;
         var token = Renew(ref _webListCts); // neuere Abfrage ersetzt die alte
         var key = item.FolderPath ?? "primary";
@@ -1170,6 +1174,9 @@ public sealed partial class MainPage : Page
             if (version == _webListVersion) BusyBar.Visibility = Vm.IsBusy ? Visibility.Visible : Visibility.Collapsed;
         }
     }
+
+    /// <summary>Ist <paramref name="item"/> noch die gewählte Ansicht und die Lu-Ansicht aktiv?</summary>
+    private bool IsCurrentLuSelection(SidebarItem item) => _webLuActive && Vm.Selected?.Key == item.Key;
 
     /// <summary>Alte Abfrage abbrechen und ein neues Abbruch-Token ausgeben.</summary>
     private static CancellationToken Renew(ref CancellationTokenSource? source)

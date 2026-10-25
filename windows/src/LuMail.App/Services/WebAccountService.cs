@@ -1,6 +1,7 @@
 using LuMail.Core.Catalog;
 using LuMail.Core.Models;
 using LuMail.Core.Resources;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -19,6 +20,8 @@ public sealed class WebAccountService
         public required Account Account { get; init; }
         public required Provider Provider { get; init; }
         public required WebView2 View { get; init; }
+        /// <summary>UI-Thread der Ansicht (beim Anlegen festgehalten) – WebView2 nur von dort aufrufen.</summary>
+        public required DispatcherQueue Dispatcher { get; init; }
         public Task? Ready { get; set; }
         public int? Unread { get; set; }
         /// <summary>Lu-Ansicht: Aufrufe pro Konto nacheinander (§21).</summary>
@@ -104,7 +107,7 @@ public sealed class WebAccountService
         if (provider?.Web is null || _host is null) return Task.CompletedTask;
 
         var view = new WebView2 { Visibility = Visibility.Visible };
-        var entry = new Entry { Account = account, Provider = provider, View = view };
+        var entry = new Entry { Account = account, Provider = provider, View = view, Dispatcher = view.DispatcherQueue };
         _entries[account.Id] = entry;
         _host.Children.Add(view);
         entry.Ready = InitializeAsync(entry);
@@ -217,11 +220,24 @@ public sealed class WebAccountService
     /// <summary>Hat der Anbieter einen Web-Leser?</summary>
     public bool HasReader(Account account) => _s.Providers.Find(account.ProviderId)?.Web?.Reader is { Length: > 0 };
 
-    private async Task<string?> ExecuteAsync(Entry entry, string script)
+    /// <summary>
+    /// Skript im Webmail ausführen. Immer auf dem UI-Thread der Ansicht: kommt der Aufruf von woanders (z. B. nach
+    /// einem ConfigureAwait(false)), wird er dorthin umgeleitet statt mit RPC_E_WRONG_THREAD still zu scheitern.
+    /// </summary>
+    private static Task<string?> ExecuteAsync(Entry entry, string script)
+    {
+        if (entry.Dispatcher.HasThreadAccess) return ExecuteOnUiThreadAsync(entry, script);
+        var done = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!entry.Dispatcher.TryEnqueue(async () => done.TrySetResult(await ExecuteOnUiThreadAsync(entry, script))))
+            done.TrySetResult(null); // Warteschlange beendet (App schließt)
+        return done.Task;
+    }
+
+    private static async Task<string?> ExecuteOnUiThreadAsync(Entry entry, string script)
     {
         try
         {
-            return await entry.View.CoreWebView2.ExecuteScriptAsync(script);
+            return entry.View.CoreWebView2 is { } core ? await core.ExecuteScriptAsync(script) : null;
         }
         catch (Exception)
         {
