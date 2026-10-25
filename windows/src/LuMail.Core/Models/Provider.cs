@@ -52,6 +52,13 @@ public sealed class Provider
     [JsonIgnore]
     public bool SupportsPassword => AuthMethods.Contains(Account.AuthPassword, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// „IMAP zuerst, wo das normale Passwort genügt“ (§20): <c>authMethods</c> beginnt mit <c>password</c>
+    /// (Hostinger) – IMAP ist der Standardweg, die Web-Anmeldung die Alternative.
+    /// </summary>
+    [JsonIgnore]
+    public bool PrefersImap => string.Equals(AuthMethods.FirstOrDefault(), Account.AuthPassword, StringComparison.OrdinalIgnoreCase);
+
     [JsonIgnore]
     public bool UsesGmailCategories => string.Equals(ServerCategories, "gmail", StringComparison.OrdinalIgnoreCase);
 

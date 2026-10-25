@@ -703,11 +703,25 @@ public class WebMailTests
                 continue;
             }
             Assert.True(p.SupportsWeb, p.Id);
-            Assert.Equal("web", p.AuthMethods[0]);
+            // Web zuerst – außer bei Anbietern, deren normales Passwort für IMAP genügt (§20, Hostinger).
+            Assert.Equal(p.PrefersImap ? "password" : "web", p.AuthMethods[0]);
             Assert.False(WebMail.IsLoggedIn(p.Web!, p.Web!.LoginUrl), p.Id);
             Assert.NotNull(WebMail.FolderUrl(p.Web!, "primary"));
             Assert.True(WebMail.IsInternalHost(p.Web!, p.Web!.HomeUrl), p.Id);
         }
+    }
+
+    [Theory]
+    [InlineData("hostinger", true)]
+    [InlineData("gmail", false)]
+    [InlineData("proton", false)]
+    [InlineData("mailru", false)]
+    [InlineData("outlook", false)]
+    public void PrefersImap_OnlyWherePasswordComesFirst(string id, bool expected)
+    {
+        var provider = Catalog.Get(id);
+        Assert.Equal(expected, provider.PrefersImap);
+        if (expected) Assert.True(provider.SupportsPassword && provider.SupportsWeb); // Web bleibt als Alternative
     }
 
     [Fact]
