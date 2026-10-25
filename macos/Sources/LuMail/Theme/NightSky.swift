@@ -19,9 +19,10 @@ struct NightSkyLayer: View {
                 let frame = proxy.frame(in: .global)
                 let sky = canvasSize == .zero ? proxy.size : canvasSize
                 let origin = canvasSize == .zero ? .zero : frame.origin
+                let haze = LuTheme.accent.opacity(0.08)
                 TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
                     Canvas { context, _ in
-                        NightSky.draw(in: &context, origin: origin, sky: sky,
+                        NightSky.draw(in: &context, origin: origin, sky: sky, haze: haze,
                                       time: timeline.date.timeIntervalSinceReferenceDate)
                     }
                 }
@@ -68,7 +69,13 @@ enum NightSky {
         }
     }()
 
-    static func draw(in context: inout GraphicsContext, origin: CGPoint, sky: CGSize, time: TimeInterval) {
+    // Farben einmal anlegen statt in jedem Bild neu zu parsen.
+    private static let skyGradient = Gradient(colors: [Color(hex: "#070A1C"), Color(hex: "#141638"), Color(hex: "#24205A")])
+    private static let moonGlow = Color(hex: "#FFE7A3")
+    private static let moonGradient = Gradient(colors: [Color(hex: "#FFF4D6"), Color(hex: "#F5D06F")])
+    private static let crater = Color(hex: "#D9AE4A").opacity(0.35)
+
+    static func draw(in context: inout GraphicsContext, origin: CGPoint, sky: CGSize, haze: Color, time: TimeInterval) {
         let w = sky.width
         let h = sky.height
         guard w > 0, h > 0 else { return }
@@ -76,11 +83,11 @@ enum NightSky {
 
         // Himmel und violetter Schleier
         context.fill(Path(skyRect), with: .linearGradient(
-            Gradient(colors: [Color(hex: "#070A1C"), Color(hex: "#141638"), Color(hex: "#24205A")]),
+            skyGradient,
             startPoint: CGPoint(x: skyRect.midX, y: skyRect.minY), endPoint: CGPoint(x: skyRect.midX, y: skyRect.maxY)))
         let hazeCenter = CGPoint(x: skyRect.minX + w * 0.15, y: skyRect.minY + h * 0.95)
         context.fill(Path(skyRect), with: .radialGradient(
-            Gradient(colors: [LuTheme.accent.opacity(0.08), .clear]),
+            Gradient(colors: [haze, .clear]),
             center: hazeCenter, startRadius: 0, endRadius: max(w, h) * 0.6))
 
         // Sterne (funkeln, die Ebene driftet langsam)
@@ -111,16 +118,16 @@ enum NightSky {
         let glowAlpha = 0.25 + 0.15 * (0.5 + 0.5 * sin(time * 2 * .pi / 6))
         let glowRect = CGRect(x: center.x - r * 3, y: center.y - r * 3, width: r * 6, height: r * 6)
         context.fill(Path(ellipseIn: glowRect), with: .radialGradient(
-            Gradient(colors: [Color(hex: "#FFE7A3").opacity(glowAlpha), .clear]),
+            Gradient(colors: [moonGlow.opacity(glowAlpha), .clear]),
             center: center, startRadius: r * 0.8, endRadius: r * 3))
         let body = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
         context.fill(Path(ellipseIn: body), with: .radialGradient(
-            Gradient(colors: [Color(hex: "#FFF4D6"), Color(hex: "#F5D06F")]),
+            moonGradient,
             center: CGPoint(x: center.x - r * 0.35, y: center.y - r * 0.35), startRadius: 0, endRadius: r * 1.6))
         for (dx, dy, cr) in [(0.30, -0.25, 0.16), (-0.25, 0.30, 0.12), (0.10, 0.42, 0.09)] {
             let c = CGPoint(x: center.x + dx * r, y: center.y + dy * r)
             context.fill(Path(ellipseIn: CGRect(x: c.x - cr * r, y: c.y - cr * r, width: cr * r * 2, height: cr * r * 2)),
-                         with: .color(Color(hex: "#D9AE4A").opacity(0.35)))
+                         with: .color(crater))
         }
     }
 
