@@ -18,7 +18,7 @@
     <EmbeddedResource Include="..\..\..\shared\**\*.json;..\..\..\shared\login\*.html"
                       LinkBase="Shared"
                       LogicalName="LuMail.Shared.%(Filename)%(Extension)" />
-    <!-- Web-Leser für die Lu-Ansicht (FUNKTIONEN §21): LuMail.Shared.lu-webmail.js -->
+    <!-- Web-Leser für die Lu-Ansicht (FUNKTIONEN §21): LuMail.Shared.lu-webmail.js, LuMail.Shared.lu-capture.js -->
     <EmbeddedResource Include="..\..\..\shared\webmail\*.js"
                       LinkBase="Shared"
                       LogicalName="LuMail.Shared.%(Filename)%(Extension)" />

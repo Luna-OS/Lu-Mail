@@ -1,5 +1,6 @@
 using LuMail.Core.Catalog;
 using LuMail.Core.Models;
+using LuMail.Core.Resources;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -75,6 +76,16 @@ public sealed class WebAccountService
         return (environment, options);
     }
 
+    /// <summary>
+    /// Mitschnitt (§21, <c>shared/webmail/lu-capture.js</c>) ab Dokumentbeginn in jede Seite dieses Browsers einhängen –
+    /// direkt nach EnsureCoreWebView2Async und vor dem ersten Navigate. Fehlt er, liest der Leser aus dem Seitenaufbau.
+    /// </summary>
+    public static async Task InstallCaptureAsync(CoreWebView2 core)
+    {
+        try { await core.AddScriptToExecuteOnDocumentCreatedAsync(SharedResources.CaptureScript); }
+        catch (Exception) { /* Mitschnitt ist optional */ }
+    }
+
     /// <summary>Lädt für alle Web-Konten eine Ansicht im Hintergrund (Zähler) und entfernt alte.</summary>
     public async Task SyncAccountsAsync(IReadOnlyList<Account> webAccounts)
     {
@@ -105,6 +116,7 @@ public sealed class WebAccountService
         var (environment, options) = await ProfileOptionsAsync(entry.Account.Id);
         await entry.View.EnsureCoreWebView2Async(environment, options);
         var core = entry.View.CoreWebView2;
+        await InstallCaptureAsync(core);
         core.DocumentTitleChanged += (_, _) => Evaluate(entry);
         core.SourceChanged += (_, _) =>
         {

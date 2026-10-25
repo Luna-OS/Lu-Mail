@@ -1050,7 +1050,7 @@ public sealed partial class MainPage : Page
                     break;
                 default:
                     _webFallback.Add(account.Id);
-                    WebInfoBar.Message = $"Die Lu-Ansicht kann {provider?.Name ?? "diesen Anbieter"} gerade nicht lesen – Webseite wird angezeigt.";
+                    WebInfoBar.Message = $"Die Lu-Ansicht kann {provider?.Name ?? "diesen Anbieter"} gerade nicht lesen – die Webseite wird angezeigt.";
                     WebInfoBar.IsOpen = true;
                     await ShowWebsiteAsync(account, key, navigate: true);
                     break;

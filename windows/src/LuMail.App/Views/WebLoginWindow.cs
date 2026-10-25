@@ -89,6 +89,7 @@ public sealed class WebLoginWindow : Window
             var (environment, options) = await App.Web.ProfileOptionsAsync(_accountId);
             await _view.EnsureCoreWebView2Async(environment, options);
             var core = _view.CoreWebView2;
+            await WebAccountService.InstallCaptureAsync(core);
             core.SourceChanged += (_, _) => Check();
             core.HistoryChanged += (_, _) => Check();
             core.NavigationCompleted += (_, _) =>

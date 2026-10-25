@@ -174,6 +174,9 @@ public sealed class AppSettings
     /// <summary>Akzentfarbe: Schlüssel aus lu-theme.json → accents, leer = Akzent der Variante.</summary>
     public string Accent { get; set; } = "";
 
+    /// <summary>Animierter Nachthimmel hinter der Oberfläche (§22, Standard an).</summary>
+    public bool NightSky { get; set; } = true;
+
     /// <summary>Web-Konten: Ansicht pro Konto-Id, "lu" (Standard) oder "web" (§21).</summary>
     public Dictionary<string, string> WebViewModes { get; set; } = new();
 

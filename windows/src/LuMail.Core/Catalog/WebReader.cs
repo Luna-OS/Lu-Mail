@@ -45,6 +45,8 @@ public sealed class WebReaderPart
 public sealed class WebListResult
 {
     public WebReaderState State { get; set; } = WebReaderState.Error;
+    /// <summary>Grund bei <c>error</c>, z. B. <c>unreadable</c> (Qualitätsprüfung: die Seite hat sich geändert).</summary>
+    public string? Reason { get; set; }
     public List<WebReaderItem> Items { get; set; } = new();
 }
 
