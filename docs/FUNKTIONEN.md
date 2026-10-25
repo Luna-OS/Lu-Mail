@@ -296,7 +296,8 @@ Nachthimmel*, Standard an).
 - **Sternschnuppe:** alle 9–18 s (zufällig) eine kurze helle Linie mit Schweif, die in 0,9 s schräg nach unten links
   zieht und ausblendet.
 - **Lesbarkeit:** Im dunklen Modus sind Seitenleiste und Nachrichtenliste durchscheinend (Hintergrund 72 % deckend),
-  der Lesebereich bleibt voll deckend. Im hellen Modus bleiben alle Flächen deckend; der Himmel ist dann nur auf
+  der Lesebereich mit geöffneter Nachricht bleibt voll deckend. Ohne geöffnete Nachricht (leerer Lesebereich
+  „Keine Nachricht ausgewählt“) ist er nur 15 % deckend – dort steht der Mond. Im hellen Modus bleiben alle Flächen deckend; der Himmel ist dann nur auf
   dem Willkommens- und dem Sperrbildschirm zu sehen.
 - **Leistung:** höchstens 30 Bilder/s, angehalten wenn das Fenster nicht sichtbar ist; bei *Bewegung reduzieren*
   (macOS) bzw. ausgeschalteten Animationen (Windows) steht der Himmel still.
