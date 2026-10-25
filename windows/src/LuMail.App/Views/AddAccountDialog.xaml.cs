@@ -21,8 +21,11 @@ public sealed partial class AddAccountDialog : ContentDialog
     private CustomServerSettings? _servers;
     private CancellationTokenSource? _cts;
     private bool _discovering;
-    /// <summary>„Erweitert: per IMAP verbinden“ gewählt (sonst Web-Anmeldung, wenn der Anbieter sie kann).</summary>
-    private bool _imapMode;
+    /// <summary>
+    /// Vom Standardweg abgewichen (Link unter der Anleitung): Standard ist die Web-Anmeldung, bei Anbietern mit
+    /// <see cref="Provider.PrefersImap"/> (§20, Hostinger) dagegen IMAP mit dem normalen Passwort.
+    /// </summary>
+    private bool _alternateMode;
 
     /// <summary>Das neu hinzugefügte Konto (null = abgebrochen).</summary>
     public Account? AddedAccount { get; private set; }
@@ -74,7 +77,7 @@ public sealed partial class AddAccountDialog : ContentDialog
             button.Click += (s, _) =>
             {
                 if ((s as Button)?.Tag is not Provider p) return;
-                _imapMode = false;
+                _alternateMode = false;
                 ShowProvider(p, null);
             };
             Grid.SetRow(button, i / columns);
@@ -113,7 +116,7 @@ public sealed partial class AddAccountDialog : ContentDialog
         try
         {
             var result = await _s.Discovery.DiscoverAsync(Email, _cts.Token);
-            _imapMode = false;
+            _alternateMode = false;
             ShowProvider(result.Provider, result.Servers);
         }
         catch (OperationCanceledException)
@@ -129,8 +132,8 @@ public sealed partial class AddAccountDialog : ContentDialog
 
     // ------------------------------------------------------------ Schritt 2
 
-    /// <summary>Web-Anmeldung (§20) – Standard für alle Anbieter mit <c>web</c>.</summary>
-    private bool WebMode => _provider is { SupportsWeb: true } && !_imapMode;
+    /// <summary>Web-Anmeldung (§20) – Standard für alle Anbieter mit <c>web</c>, außer wo das normale Passwort genügt.</summary>
+    private bool WebMode => _provider is { SupportsWeb: true } provider && (provider.PrefersImap ? _alternateMode : !_alternateMode);
     private bool OAuthAvailable => _provider is not null && _s.Setup.CanUseOAuth(_provider);
     private bool OAuthOnlyWithoutClient => !WebMode && _provider is { SupportsPassword: false } && !OAuthAvailable;
 
@@ -168,7 +171,9 @@ public sealed partial class AddAccountDialog : ContentDialog
         WebModeDetail.Text = $"Lu-Mail öffnet die echte Anmeldeseite von {provider.Name} in einem eigenen Fenster – auch mit " +
                              "Bestätigung in zwei Schritten. Lu-Mail speichert kein Passwort, nur die Anmeldung (Cookies) dieses Kontos.";
         ModeLink.Visibility = provider.SupportsWeb ? Visibility.Visible : Visibility.Collapsed;
-        ModeLink.Content = WebMode ? "Erweitert: per IMAP verbinden (App-Passwort/OAuth)" : "Einfacher: auf der Webseite anmelden";
+        ModeLink.Content = provider.PrefersImap
+            ? (WebMode ? "Direkt in Lu-Mail verbinden (normales Passwort)" : "Stattdessen auf der Webseite anmelden")
+            : (WebMode ? "Erweitert: per IMAP verbinden (App-Passwort/OAuth)" : "Einfacher: auf der Webseite anmelden");
 
         ServersText.Visibility = provider.CustomServers && !WebMode ? Visibility.Visible : Visibility.Collapsed;
         ServersText.Text = servers is null
@@ -259,7 +264,7 @@ public sealed partial class AddAccountDialog : ContentDialog
     private void OnModeLinkClick(object sender, RoutedEventArgs e)
     {
         if (_provider is null) return;
-        _imapMode = !_imapMode;
+        _alternateMode = !_alternateMode;
         ShowProvider(_provider, _servers);
     }
 
