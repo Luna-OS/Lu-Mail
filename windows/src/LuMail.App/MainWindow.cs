@@ -51,6 +51,10 @@ public sealed class MainWindow : Window
 
         Activated += (_, args) => _page.OnWindowActivationChanged(args.WindowActivationState != WindowActivationState.Deactivated);
 
+        // Nachthimmel anhalten, solange das Fenster minimiert oder verborgen ist (§22).
+        VisibilityChanged += (_, args) => _page.SetWindowVisible(args.Visible && !IsMinimized());
+        AppWindow.Changed += (_, _) => _page.SetWindowVisible(AppWindow.IsVisible && !IsMinimized());
+
         Closed += (_, _) =>
         {
             // Geladenes Update beim Beenden still installieren (ohne Neustart).
@@ -60,6 +64,10 @@ public sealed class MainWindow : Window
             App.Notifications.Unregister();
         };
     }
+
+    private bool IsMinimized() =>
+        AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter
+        && presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized;
 
     private void BringToFront()
     {

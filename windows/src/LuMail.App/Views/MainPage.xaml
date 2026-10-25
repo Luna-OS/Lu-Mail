@@ -168,6 +168,9 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- ===== Nachthimmel (§22) – ganz hinten, Flächen darüber im dunklen Modus durchscheinend ===== -->
+        <views:NightSkyView x:Name="Sky" Grid.RowSpan="2" />
+
         <!-- ===== Eigene Titelleiste ===== -->
         <Grid x:Name="AppTitleBar" Grid.Row="0" Padding="16,0,0,0" Background="Transparent">
             <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="10">
@@ -185,7 +188,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- ===== Sidebar ===== -->
-            <Grid Grid.Column="0" Padding="8,0,6,10">
+            <Grid x:Name="SidebarPane" Grid.Column="0" Padding="8,0,6,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -228,8 +231,10 @@
             </Grid>
 
             <!-- ===== Web-Konto (eingebettetes Webmail, §20) – liegt hinter Liste und Leseansicht ===== -->
+            <!-- Nur in der Webseiten-Ansicht sichtbar/bedienbar; sonst Opacity 0 (bleibt aber in voller Größe geladen). -->
             <Grid x:Name="WebPanel" Grid.Column="1" Grid.ColumnSpan="2" Background="{ThemeResource LuSurface}"
-                  BorderBrush="{ThemeResource LuBorder}" BorderThickness="1,1,0,0" CornerRadius="10,0,0,0">
+                  BorderBrush="{ThemeResource LuBorder}" BorderThickness="1,1,0,0" CornerRadius="10,0,0,0"
+                  IsHitTestVisible="False" Opacity="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -346,8 +351,9 @@
                 <TextBlock x:Name="EmptyText" Grid.Row="2" Margin="0,40,0,0" HorizontalAlignment="Center"
                            Foreground="{ThemeResource LuTextMuted}" Text="Keine Nachrichten" Visibility="Collapsed" />
 
-                <StackPanel x:Name="WelcomePanel" Grid.Row="2" MaxWidth="300" Margin="24" HorizontalAlignment="Center"
-                            VerticalAlignment="Center" Spacing="12" Visibility="Collapsed">
+                <StackPanel x:Name="WelcomePanel" Grid.Row="2" MaxWidth="330" Margin="16" Padding="24,24,24,22" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" Background="{ThemeResource LuSurface}" CornerRadius="{StaticResource LuRadiusLarge}"
+                            Spacing="12" Visibility="Collapsed">
                     <FontIcon HorizontalAlignment="Center" FontSize="44" Foreground="{ThemeResource LuMoon}" Glyph="&#xE708;" />
                     <TextBlock HorizontalAlignment="Center" FontSize="20" FontWeight="SemiBold"
                                Foreground="{ThemeResource LuTextPrimary}" Text="Willkommen bei Lu-Mail" />
@@ -559,7 +565,9 @@
 
         <!-- App-Sperre -->
         <Grid x:Name="LockOverlay" Grid.Row="0" Grid.RowSpan="2" Background="{ThemeResource LuBackground}" Visibility="Collapsed">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
+            <views:NightSkyView x:Name="LockSky" />
+            <StackPanel Padding="40,30,40,30" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{ThemeResource LuSurface}" CornerRadius="{StaticResource LuRadiusLarge}" Spacing="14">
                 <FontIcon HorizontalAlignment="Center" FontSize="56" Foreground="{ThemeResource LuMoon}" Glyph="&#xE708;" />
                 <TextBlock HorizontalAlignment="Center" FontSize="20" FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}"
                            Text="Lu-Mail ist gesperrt" />
