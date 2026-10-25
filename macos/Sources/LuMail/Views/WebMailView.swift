@@ -83,6 +83,15 @@ struct WebMailView: View {
             .padding(.vertical, 6)
             .background(LuTheme.surface)
             Divider().overlay(LuTheme.border)
+            if provider.prefersIMAP {
+                // Z. B. Hostinger: IMAP geht mit dem normalen Passwort – dann zeigt Lu-Mail das Postfach selbst an.
+                InfoStrip(icon: "sparkles", tint: LuTheme.accent,
+                          text: "\(provider.name) geht auch direkt in Lu-Mail – mit deinem normalen Passwort (Liste, Suche, Senden).") {
+                    Button("Jetzt umstellen") { Task { await model.switchToIMAP(account) } }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            }
             WebViewHost(webView: webMail.webView(for: account.id, config: web))
         }
         .navigationTitle(model.title)

@@ -198,6 +198,13 @@ Das ist ab sofort der **Standardweg** im Assistenten; IMAP bleibt als „Erweite
 - `webUserAgent.macos` – User-Agent für WKWebView (Safari-Kennung, sonst lehnen manche Anbieter die Anmeldung ab).
   Windows nutzt den Standard-User-Agent von WebView2 (Edge).
 
+**IMAP zuerst, wo das normale Passwort genügt:** Beginnt `authMethods` mit `"password"` (Hostinger: normales
+Postfach-Passwort, kein App-Passwort), ist IMAP der Standardweg im Assistenten; die Web-Anmeldung steht als
+„Stattdessen auf der Webseite anmelden“ bereit. Bestehende Web-Konten solcher Anbieter zeigen in der Webseiten-Ansicht
+den Hinweis „<Anbieter> geht auch direkt in Lu-Mail – mit deinem normalen Passwort.“ und den Button **„Jetzt
+umstellen“**: Passwort-Anmeldung im Browser mit vorausgefüllter Adresse; klappt sie, ersetzt das IMAP-Konto das
+Web-Konto (dessen Cookies werden gelöscht) und sein Posteingang wird ausgewählt.
+
 **Sitzungen**
 - Jedes Web-Konto hat einen **eigenen, dauerhaften Cookie-Speicher** (mehrere Gmail-Konten parallel möglich):
   macOS `WKWebsiteDataStore(forIdentifier: account.id)`, Windows WebView2-Profil `account.id` (eigener Profilname,

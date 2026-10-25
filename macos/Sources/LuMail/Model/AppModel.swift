@@ -314,6 +314,22 @@ final class AppModel {
         }
     }
 
+    /// Web-Konto auf IMAP umstellen (Anbieter, bei denen das normale Passwort genügt, z. B. Hostinger – §20).
+    func switchToIMAP(_ account: Account) async {
+        guard account.isWeb, let provider = provider(for: account) else { return }
+        do {
+            try await addAccount(provider: provider, emailHint: account.email.isEmpty ? nil : account.email)
+            // addAccount ersetzt ein Konto mit gleicher Adresse ohne dessen Speicher zu löschen – hier ausdrücklich.
+            webMail.discard(account.id)
+            if accounts.contains(where: { $0.id == account.id }) { removeAccount(account) }
+            banner = "\(provider.name) läuft jetzt direkt in Lu-Mail."
+        } catch is CancellationError {
+            return
+        } catch {
+            banner = AuthService.friendlyLoginError(error, provider: provider)
+        }
+    }
+
     /// Erneut anmelden (Web-Konto): Anmeldeseite im Postfach des Kontos zeigen.
     func reloginWeb(_ account: Account) {
         guard let web = provider(for: account)?.web else { return }

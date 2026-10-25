@@ -65,6 +65,8 @@ public struct Provider: Codable, Hashable, Identifiable, Sendable {
     public var web: WebConfig?
 
     public var usesGmailCategories: Bool { serverCategories == "gmail" }
+    /// IMAP mit dem normalen Passwort ist der Standardweg (z. B. Hostinger) – Web-Anmeldung nur als Alternative.
+    public var prefersIMAP: Bool { authMethods.first == .password }
     public var needsCustomServers: Bool { customServers == true }
 }
 

@@ -610,8 +610,8 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
-        "web",
-        "password"
+        "password",
+        "web"
       ],
       "serverCategories": "none",
       "passwordLabel": "Postfach-Passwort",
@@ -633,7 +633,7 @@ public enum SharedResources {
             "button": "hPanel öffnen"
           },
           {
-            "text": "Auf „Im Browser anmelden“ klicken."
+            "text": "Auf „Im Browser anmelden“ klicken und dein normales Hostinger-Postfach-Passwort eingeben – kein App-Passwort nötig. Danach zeigt Lu-Mail dein Postfach direkt an (mit Senden, Suche und Kategorien)."
           }
         ]
       },

@@ -11,9 +11,15 @@ final class WebAccountTests: XCTestCase {
             if provider.id == "custom" {
                 XCTAssertNil(provider.web)
                 XCTAssertFalse(provider.authMethods.contains(.web))
+            } else if provider.id == "hostinger" {
+                // Hostinger: IMAP mit dem normalen Postfach-Passwort zuerst, Web nur als Alternative.
+                XCTAssertNotNil(provider.web)
+                XCTAssertEqual(provider.authMethods, [.password, .web])
+                XCTAssertTrue(provider.prefersIMAP)
             } else {
                 XCTAssertNotNil(provider.web, provider.id)
                 XCTAssertEqual(provider.authMethods.first, .web, provider.id)
+                XCTAssertFalse(provider.prefersIMAP, provider.id)
             }
         }
         XCTAssertNotNil(catalog.webUserAgent["macos"])

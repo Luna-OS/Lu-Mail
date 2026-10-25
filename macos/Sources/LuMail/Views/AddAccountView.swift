@@ -112,7 +112,8 @@ struct AddAccountView: View {
         self.servers = servers
         errorMessage = nil
         bridgeRunning = nil
-        useIMAP = provider.web == nil
+        // IMAP zuerst, wo das normale Passwort genügt (Hostinger); sonst die Anmeldung auf der Webseite.
+        useIMAP = provider.web == nil || provider.prefersIMAP
         step = .guide
         if useIMAP { checkBridge() }
     }
@@ -250,7 +251,9 @@ struct AddAccountView: View {
         }
 
         if provider.web != nil {
-            Button("Zurück zur einfachen Anmeldung (ohne App-Passwort)") { useIMAP = false }
+            Button(provider.prefersIMAP ? "Stattdessen auf der Webseite anmelden" : "Zurück zur einfachen Anmeldung (ohne App-Passwort)") {
+                useIMAP = false
+            }
                 .buttonStyle(.link)
                 .font(.callout)
         }
