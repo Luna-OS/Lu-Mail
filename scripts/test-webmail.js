@@ -58,11 +58,25 @@ const pages = {
 
   r = await call(pages.gmail, 'LuWebmail.open("gmail", "18def")');
   assert.strictEqual(r.state, "ok");
+  // Unbekannte ID: direkt über die Adresse öffnen (#inbox/<id>).
   r = await call(pages.gmail, 'LuWebmail.open("gmail", "nope")');
-  assert.strictEqual(r.state, "missing");
+  assert.strictEqual(r.state, "ok");
+  assert.strictEqual(await page.evaluate("location.hash"), "#inbox/nope");
+  // Ausgeblendete Liste (offene Unterhaltung): Zeile wird trotzdem angeklickt.
+  await page.setContent(`<html><body>${pages.gmail.replace('<div role="main">', '<div role="main"><div style="display:none">')}</div></body></html>`);
+  await page.addScriptTag({ content: script });
+  await page.evaluate(() => { window.__clicked = ""; document.addEventListener("click", (e) => { window.__clicked = e.target.getAttribute("data-legacy-thread-id"); }); });
+  r = JSON.parse(await page.evaluate('LuWebmail.open("gmail", "18def")'));
+  assert.strictEqual(r.state, "ok");
+  assert.strictEqual(await page.evaluate("window.__clicked"), "18def");
 
   r = await call(pages.gmailMessage, 'LuWebmail.message("gmail")');
   assert.strictEqual(r.state, "ok");
+  // Gmail: Thread-ID an der Betreffzeile entscheidet, ob schon die angeklickte Unterhaltung zu sehen ist.
+  const gmailThread = pages.gmailMessage.replace('<h2 class="hP">', '<h2 class="hP" data-legacy-thread-id="18abc">');
+  assert.strictEqual((await call(gmailThread, 'LuWebmail.message("gmail", "18abc")')).state, "ok");
+  assert.strictEqual((await call(gmailThread, 'LuWebmail.message("gmail", "18def")')).state, "loading");
+  r = await call(pages.gmailMessage, 'LuWebmail.message("gmail")');
   assert.strictEqual(r.subject, "Hallo Welt");
   assert.strictEqual(r.parts[0].fromEmail, "anna@example.com");
   assert.strictEqual(r.parts[0].to, "ich");
@@ -133,6 +147,10 @@ const pages = {
   r = JSON.parse(await page.evaluate('LuWebmail.message("proton")'));
   assert.strictEqual(r.state, "ok");
   assert.strictEqual(r.subject, "Willkommen");
+  // Angeklickt wurde eine andere Unterhaltung, angezeigt wird noch conv1 → "loading" statt falschem Inhalt.
+  assert.strictEqual(JSON.parse(await page.evaluate('LuWebmail.message("proton", "conv2")')).state, "loading");
+  assert.strictEqual(JSON.parse(await page.evaluate('LuWebmail.message("proton", "conv1")')).state, "ok");
+  assert.strictEqual(JSON.parse(await page.evaluate('LuWebmail.message("proton", "m1")')).state, "ok");
   assert.strictEqual(r.parts.length, 1, "nur die Nachricht, nicht der Editor");
   assert.deepStrictEqual([r.parts[0].from, r.parts[0].fromEmail, r.parts[0].to], ["Proton", "no-reply@proton.me", "Alex"]);
   assert.ok(r.parts[0].html.includes("<b>Alex</b>") && !r.parts[0].html.includes("<script"));
@@ -150,6 +168,11 @@ const pages = {
   r = JSON.parse(await page.evaluate('LuWebmail.message("proton")'));
   assert.strictEqual(r.state, "ok");
   assert.ok(r.parts[0].html.includes("<img"));
+  // Unterhaltung ohne Listeneintrag (schmales Fenster): über die Adresse öffnen, der Router erfährt es per popstate.
+  await page.evaluate(() => { window.__pop = ""; window.addEventListener("popstate", () => { window.__pop = location.pathname; }); });
+  r = JSON.parse(await page.evaluate('LuWebmail.open("proton", "conv9")'));
+  assert.strictEqual(r.state, "ok");
+  assert.strictEqual(await page.evaluate("window.__pop"), "/u/0/inbox/conv9");
   await page.unroute("https://mail.proton.me/**");
 
   r = await call(pages.mailru, 'LuWebmail.list("mailru")');

@@ -126,8 +126,10 @@ public enum WebReader {
         script("LuWebmail.open(\(jsString(reader)), \(jsString(id)))")
     }
 
-    public static func messageScript(reader: String) -> String {
-        script("LuWebmail.message(\(jsString(reader)))")
+    /// Mit `id`: „loading“, solange das Webmail noch eine andere Nachricht anzeigt (nach dem Klick kurz die vorige).
+    public static func messageScript(reader: String, id: String? = nil) -> String {
+        guard let id else { return script("LuWebmail.message(\(jsString(reader)))") }
+        return script("LuWebmail.message(\(jsString(reader)), \(jsString(id)))")
     }
 
     /// Sicheres JavaScript-String-Literal (JSON ist gültiges JavaScript).

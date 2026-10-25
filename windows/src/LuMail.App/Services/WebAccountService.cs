@@ -346,6 +346,26 @@ public sealed class WebAccountService
     public bool CanGoBack => ActiveView?.CoreWebView2?.CanGoBack == true;
     public bool CanGoForward => ActiveView?.CoreWebView2?.CanGoForward == true;
 
+    /// <summary>
+    /// §20 „Jetzt umstellen“ (bzw. dieselbe Adresse im Assistenten per IMAP hinzugefügt): das IMAP-Konto ersetzt das
+    /// Web-Konto. Profil löschen, solange die Ansicht noch offen ist (sonst bleiben gesperrte Dateien liegen), dann das
+    /// Konto entfernen.
+    /// </summary>
+    public async Task ReplaceWithImapAsync(Account web, Account imap)
+    {
+        Remove(web);
+        _s.Settings.WebViewModes.Remove(web.Id);
+        _s.Settings.CollapsedAccounts.Remove(web.Id);
+        _s.SaveSettings();
+        await _s.Setup.ReplaceWebAccountAsync(web, imap);
+    }
+
+    /// <summary>Web-Konto desselben Anbieters mit derselben Adresse (Kandidat für die Ersetzung durch IMAP).</summary>
+    public Account? FindWebTwin(Account imap) =>
+        imap.IsWeb ? null : _s.Accounts.Load().FirstOrDefault(a => a.IsWeb
+            && string.Equals(a.ProviderId, imap.ProviderId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(a.Email, imap.Email, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Konto entfernt: Profil (Cookies) löschen und Ansicht entfernen.</summary>
     public void Remove(Account account)
     {

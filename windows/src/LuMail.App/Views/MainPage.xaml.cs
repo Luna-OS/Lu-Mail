@@ -79,6 +79,7 @@ public sealed partial class MainPage : Page
         _initialized = true;
 
         SidebarList.ItemsSource = Vm.Sidebar;
+        SidebarList.AddHandler(KeyDownEvent, new KeyEventHandler(OnSidebarKeyDown), handledEventsToo: true);
         MessageList.ItemsSource = Vm.Messages;
         ApplySky();
         ConversationToggle.IsChecked = Vm.ConversationsEnabled;
@@ -190,11 +191,26 @@ public sealed partial class MainPage : Page
 
     private async void OnSidebarItemClick(object sender, ItemClickEventArgs e)
     {
+        if (e.ClickedItem is SidebarItem { IsExpandable: true } group)
+        {
+            Vm.ToggleExpanded(group); // Anbieter-Überschrift / Kontozeile: auf- und zuklappen
+            return;
+        }
         if (e.ClickedItem is SidebarItem item && item.IsSelectable)
         {
             await Vm.SelectAsync(item);
             UpdateListHeader();
         }
+    }
+
+    /// <summary>Links/Rechts auf einer Anbieter-Überschrift oder Kontozeile: zu-/aufklappen.</summary>
+    private void OnSidebarKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (Windows.System.VirtualKey.Left or Windows.System.VirtualKey.Right)) return;
+        if (e.OriginalSource is not ListViewItem container || SidebarList.ItemFromContainer(container) is not SidebarItem { IsExpandable: true } item) return;
+        var expand = e.Key == Windows.System.VirtualKey.Right;
+        if (item.IsExpanded != expand) Vm.SetExpanded(item, expand);
+        e.Handled = true;
     }
 
     // ==================================================== Nachrichtenliste
@@ -542,11 +558,18 @@ public sealed partial class MainPage : Page
         ReaderPlaceholder.Visibility = Visibility.Visible;
         UpdateReaderBackground();
         ReaderLoading.IsActive = false;
-        if (_webViewReady)
-        {
-            _navigatingInternally = true;
-            ReaderView.CoreWebView2.NavigateToString("<!doctype html><html><body></body></html>");
-        }
+        ShowBlankBody();
+    }
+
+    /// <summary>Leeren Inhalt im Theme-Hintergrund zeigen (z. B. während eine Nachricht lädt).</summary>
+    private void ShowBlankBody()
+    {
+        if (!_webViewReady) return;
+        var dark = ActualTheme == ElementTheme.Dark;
+        var tokens = _s.Theme.Palette(_s.Settings.ThemeVariant, dark, _s.Settings.Accent);
+        var background = tokens.TryGetValue("surface", out var surface) ? surface : (dark ? "#1A1C3A" : "#FFFFFF");
+        _navigatingInternally = true;
+        ReaderView.CoreWebView2.NavigateToString($"<!doctype html><html><body style=\"background:{background}\"></body></html>");
     }
 
     private void UpdateActionButtons()
@@ -1073,6 +1096,7 @@ public sealed partial class MainPage : Page
             _webListTimer?.Stop();
             App.Web.HideAll();
             WebInfoBar.IsOpen = false;
+            UpdateImapOffer(null);
             SetWebsiteMode(false);
             WebsiteButton.Visibility = Visibility.Collapsed;
             ConversationToggle.Visibility = Visibility.Visible;
@@ -1091,6 +1115,7 @@ public sealed partial class MainPage : Page
         _webLuActive = true;
         // Webseite bleibt in voller Größe geladen dahinter (rendert weiter), unsichtbar und ohne Eingaben.
         SetWebsiteMode(false);
+        UpdateImapOffer(null);
         ListPane.Visibility = Visibility.Visible;
         ReaderPane.Visibility = Visibility.Visible;
         WebsiteButton.Visibility = Visibility.Visible;
@@ -1115,6 +1140,7 @@ public sealed partial class MainPage : Page
     private async Task ShowWebsiteAsync(Account account, string folderKey, bool navigate)
     {
         CancelWebLoads();
+        UpdateImapOffer(account);
         _webLuActive = false;
         _webListTimer?.Stop();
         SetWebsiteMode(true);
@@ -1217,8 +1243,14 @@ public sealed partial class MainPage : Page
     }
 
     /// <summary>Nachricht über den Web-Leser öffnen und anzeigen.</summary>
+    private const string WebReadFailedText = "Die Nachricht konnte in der Lu-Ansicht nicht gelesen werden – öffne sie in der Webseite.";
+
     private async Task OpenWebMessageAsync(MessageItem item, int version)
     {
+        // Alten Inhalt sofort verwerfen: nie die vorige Nachricht unter dem Kopf der neuen.
+        _webMessage = null;
+        ShowBlankBody();
+        if (MessageBar.IsOpen && MessageBar.Message == WebReadFailedText) MessageBar.IsOpen = false;
         PhishingBar.IsOpen = false;
         UnsubscribeButton.Visibility = Visibility.Collapsed;
         ScheduledBar.Visibility = Visibility.Collapsed;
@@ -1235,7 +1267,8 @@ public sealed partial class MainPage : Page
             if (token.IsCancellationRequested || version != _openVersion) return;
             if (result is null)
             {
-                ShowMessage("Die Nachricht konnte in der Lu-Ansicht nicht gelesen werden – öffne sie in der Webseite.", isError: false,
+                // Wirklich nichts lesbar (open fehlgeschlagen oder 15 s ohne Inhalt): Lesebereich bleibt leer.
+                ShowMessage(WebReadFailedText, isError: false,
                     actionText: "In der Webseite öffnen", action: OpenCurrentInWebsite, severity: InfoBarSeverity.Warning);
                 return;
             }
@@ -1301,6 +1334,7 @@ public sealed partial class MainPage : Page
             _ = previous;
         }
         CancelWebLoads();
+        UpdateImapOffer(account);
         _webLuActive = false;
         _webListTimer?.Stop();
         SetWebsiteMode(true);
@@ -1320,6 +1354,111 @@ public sealed partial class MainPage : Page
         }
         WebInfoBar.Message = "Schreibe direkt im Postfach (Verfassen).";
         WebInfoBar.IsOpen = true;
+    }
+
+    // ------------------------------------------- §20 „IMAP zuerst“: Web-Konto auf IMAP umstellen
+
+    private readonly HashSet<string> _imapOfferDismissed = new();
+    private CancellationTokenSource? _imapSwitchCts;
+    private string? _imapSwitchAccountId;
+
+    /// <summary>Hinweis „geht auch direkt in Lu-Mail“ in der Webseiten-Ansicht eines Web-Kontos, dessen Anbieter IMAP bevorzugt.</summary>
+    private void UpdateImapOffer(Account? account)
+    {
+        var provider = account is { IsWeb: true } ? _s.Providers.Find(account.ProviderId) : null;
+        var show = provider is { PrefersImap: true, SupportsPassword: true } && !_imapOfferDismissed.Contains(account!.Id);
+        // Ansicht verlassen → laufende Umstellung abbrechen (nichts passiert im Hintergrund).
+        if (!show || _imapSwitchAccountId != account?.Id) _imapSwitchCts?.Cancel();
+        if (!show)
+        {
+            ImapOfferBar.IsOpen = false;
+            return;
+        }
+        if (_imapSwitchCts is null) ResetImapOffer(provider!);
+        ImapOfferBar.IsOpen = true;
+    }
+
+    private void ResetImapOffer(Provider provider)
+    {
+        ImapOfferBar.Severity = InfoBarSeverity.Informational;
+        ImapOfferBar.Title = "";
+        ImapOfferBar.Message = $"{provider.Name} geht auch direkt in Lu-Mail – mit deinem normalen Passwort.";
+        ImapSwitchButton.Content = "Jetzt umstellen";
+    }
+
+    private void OnImapOfferClosed(InfoBar sender, object args)
+    {
+        if (App.Web.ActiveAccount is { } account) _imapOfferDismissed.Add(account.Id); // für diese Sitzung
+        _imapSwitchCts?.Cancel();
+    }
+
+    /// <summary>
+    /// „Jetzt umstellen“: Passwort-Anmeldung im Browser (Adresse vorausgefüllt). Klappt sie, ersetzt das IMAP-Konto das
+    /// Web-Konto (Profil/Cookies gelöscht) und sein Posteingang wird gewählt. Während des Wartens: „Abbrechen“.
+    /// </summary>
+    private async void OnSwitchToImapClick(object sender, RoutedEventArgs e)
+    {
+        if (_imapSwitchCts is not null)
+        {
+            _imapSwitchCts.Cancel();
+            return;
+        }
+        if (Vm.Selected is not { Target: SidebarTarget.Web, Account: { IsWeb: true } web }
+            || _s.Providers.Find(web.ProviderId) is not { PrefersImap: true } provider) return;
+
+        var cts = _imapSwitchCts = new CancellationTokenSource();
+        _imapSwitchAccountId = web.Id;
+        ImapOfferBar.Severity = InfoBarSeverity.Informational;
+        ImapOfferBar.Title = "";
+        ImapOfferBar.Message = $"Melde dich im geöffneten Browserfenster mit deinem normalen {provider.Name}-Passwort an …";
+        ImapSwitchButton.Content = "Abbrechen";
+        Account added;
+        try
+        {
+            added = await _s.Setup.AddAccountAsync(provider, web.Email.Contains('@') ? web.Email : null, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ImapOfferBar.IsOpen) ResetImapOffer(provider);
+            return;
+        }
+        catch (Exception ex)
+        {
+            ImapOfferBar.Severity = InfoBarSeverity.Error;
+            ImapOfferBar.Title = "Anmeldung fehlgeschlagen";
+            ImapOfferBar.Message = Dialogs.LoginErrorText(ex);
+            ImapSwitchButton.Content = "Erneut versuchen";
+            return;
+        }
+        finally
+        {
+            _imapSwitchCts = null;
+            _imapSwitchAccountId = null;
+            cts.Dispose();
+        }
+
+        try
+        {
+            ImapOfferBar.IsOpen = false;
+            await App.Web.ReplaceWithImapAsync(web, added);
+            _webFallback.Remove(web.Id);
+            Vm.LoadAccounts();
+            Vm.RebuildSidebar(force: true);
+            if (Vm.SidebarAll.FirstOrDefault(i => i.Account?.Id == added.Id && i.Target == SidebarTarget.Category) is { } inbox)
+            {
+                Vm.RevealInSidebar(inbox);
+                await Vm.SelectAsync(inbox);
+            }
+            UpdateListHeader();
+            ShowMessage($"{provider.Name} läuft jetzt direkt in Lu-Mail.", isError: false);
+            await App.Web.SyncAccountsAsync(Vm.WebAccounts);
+            await Vm.RefreshAllAsync();
+            UpdateListHeader();
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("Umstellen fehlgeschlagen: " + ex.Message, isError: true);
+        }
     }
 
     private void OnWebBackClick(object sender, RoutedEventArgs e) => App.Web.GoBack();
@@ -1344,10 +1483,18 @@ public sealed partial class MainPage : Page
             await dialog.ShowAsync();
             if (dialog.AddedAccount is { } account)
             {
+                // Konten neu laden, auch wenn gerade eine Aktualisierung läuft (RefreshAllAsync kehrt dann sofort
+                // zurück) – sonst fehlte das neue Konto und ein ersetztes Web-Konto stünde noch in der Seitenleiste.
+                Vm.LoadAccounts();
+                Vm.RebuildSidebar(force: true);
                 await Vm.RefreshAllAsync();
                 await App.Web.SyncAccountsAsync(Vm.WebAccounts);
-                var inbox = Vm.Sidebar.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target is SidebarTarget.Category or SidebarTarget.Web);
-                if (inbox is not null) await Vm.SelectAsync(inbox);
+                var inbox = Vm.SidebarAll.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target is SidebarTarget.Category or SidebarTarget.Web);
+                if (inbox is not null)
+                {
+                    Vm.RevealInSidebar(inbox);
+                    await Vm.SelectAsync(inbox);
+                }
                 UpdateListHeader();
             }
         }
@@ -1399,7 +1546,7 @@ public sealed partial class MainPage : Page
         {
             Vm.RebuildSidebar();
             Vm.ApplyRulesLocally();
-            await Vm.SelectAsync(Vm.Selected ?? Vm.Sidebar.First(i => i.Key == "all"));
+            await Vm.SelectAsync(Vm.Selected ?? Vm.SidebarAll.First(i => i.Key == "all"));
         }
         RenderCurrent();
         UpdateListHeader();

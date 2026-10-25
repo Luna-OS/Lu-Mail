@@ -177,6 +177,29 @@ public sealed class AppSettings
     /// <summary>Animierter Nachthimmel hinter der Oberfläche (§22, Standard an).</summary>
     public bool NightSky { get; set; } = true;
 
+    /// <summary>Seitenleiste: zugeklappte Anbieter (Anbieter-Id).</summary>
+    public List<string> CollapsedProviders { get; set; } = new();
+
+    /// <summary>Seitenleiste: zugeklappte Konten (Konto-Id).</summary>
+    public List<string> CollapsedAccounts { get; set; } = new();
+
+    /// <summary>Id in <paramref name="list"/> aufnehmen bzw. entfernen; true, wenn sich etwas geändert hat.</summary>
+    public static bool SetCollapsed(List<string> list, string id, bool collapsed)
+    {
+        var index = list.FindIndex(x => string.Equals(x, id, StringComparison.Ordinal));
+        if (collapsed == index >= 0) return false;
+        if (collapsed) list.Add(id);
+        else list.RemoveAt(index);
+        return true;
+    }
+
+    /// <summary>Zugeklappt-Zustand entfernter Konten verwerfen; true, wenn sich etwas geändert hat.</summary>
+    public bool PruneCollapsedAccounts(IEnumerable<string> existingAccountIds)
+    {
+        var existing = existingAccountIds.ToHashSet(StringComparer.Ordinal);
+        return CollapsedAccounts.RemoveAll(id => !existing.Contains(id)) > 0;
+    }
+
     /// <summary>Web-Konten: Ansicht pro Konto-Id, "lu" (Standard) oder "web" (§21).</summary>
     public Dictionary<string, string> WebViewModes { get; set; } = new();
 

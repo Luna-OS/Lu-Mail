@@ -11,9 +11,15 @@ final class WebAccountTests: XCTestCase {
             if provider.id == "custom" {
                 XCTAssertNil(provider.web)
                 XCTAssertFalse(provider.authMethods.contains(.web))
+            } else if provider.id == "hostinger" {
+                // Hostinger: IMAP mit dem normalen Postfach-Passwort zuerst, Web nur als Alternative.
+                XCTAssertNotNil(provider.web)
+                XCTAssertEqual(provider.authMethods, [.password, .web])
+                XCTAssertTrue(provider.prefersIMAP)
             } else {
                 XCTAssertNotNil(provider.web, provider.id)
                 XCTAssertEqual(provider.authMethods.first, .web, provider.id)
+                XCTAssertFalse(provider.prefersIMAP, provider.id)
             }
         }
         XCTAssertNotNil(catalog.webUserAgent["macos"])
@@ -127,5 +133,7 @@ final class WebReaderTests: XCTestCase {
     func testScriptsQuoteSafely() {
         XCTAssertEqual(WebReader.jsString(#"a"b\c</script>"#), #""a\"b\\c<\/script>""#)
         XCTAssertTrue(WebReader.openScript(reader: "gmail", id: "18abc").hasSuffix(#";LuWebmail.open("gmail", "18abc")"#))
+        XCTAssertTrue(WebReader.messageScript(reader: "proton", id: "c1").hasSuffix(#";LuWebmail.message("proton", "c1")"#))
+        XCTAssertTrue(WebReader.messageScript(reader: "proton").hasSuffix(#";LuWebmail.message("proton")"#))
     }
 }

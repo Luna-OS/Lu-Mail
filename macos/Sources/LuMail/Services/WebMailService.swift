@@ -277,7 +277,7 @@ final class WebMailService {
                 try? await Task.sleep(for: .milliseconds(500))
                 if Task.isCancelled { return nil }
                 guard let message = WebReader.decode(WebReader.MessageResult.self,
-                                                     from: await evaluate(entry, WebReader.messageScript(reader: reader))),
+                                                     from: await evaluate(entry, WebReader.messageScript(reader: reader, id: item.id))),
                       message.state == .ok, !message.parts.isEmpty else { continue }
                 latest = message
                 // Bei Ansichten mit Liste und Nachricht nebeneinander kann kurz noch die vorige Nachricht zu sehen sein.

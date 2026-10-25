@@ -610,8 +610,8 @@ public enum SharedResources {
         "security": "tls"
       },
       "authMethods": [
-        "web",
-        "password"
+        "password",
+        "web"
       ],
       "serverCategories": "none",
       "passwordLabel": "Postfach-Passwort",
@@ -633,7 +633,7 @@ public enum SharedResources {
             "button": "hPanel öffnen"
           },
           {
-            "text": "Auf „Im Browser anmelden“ klicken."
+            "text": "Auf „Im Browser anmelden“ klicken und dein normales Hostinger-Postfach-Passwort eingeben – kein App-Passwort nötig. Danach zeigt Lu-Mail dein Postfach direkt an (mit Senden, Suche und Kategorien)."
           }
         ]
       },
@@ -1317,7 +1317,7 @@ public enum SharedResources {
 """#
 
     /// shared/webmail/lu-webmail.js
-    public static let webmailJS = #"""
+    public static let webmailJS = ##"""
 // Lu-Mail Web-Leser (docs/FUNKTIONEN.md §21)
 //
 // Läuft im unsichtbaren Browser eines Web-Kontos (macOS: eigene Content-World, Windows: WebView2) und liest
@@ -1328,7 +1328,8 @@ public enum SharedResources {
 //                                      snippet, date, dateTitle, unread, attachment}]}
 //                                      ("error" mit reason "unreadable": die Seite hat sich geändert)
 //   LuWebmail.open("gmail", id)    → {"state":"ok"|"missing"}   (öffnet die Nachricht im Webmail)
-//   LuWebmail.message("gmail")     → {"state":"ok"|"loading", "subject", "parts":[{from, fromEmail, to, date, html}]}
+//   LuWebmail.message("gmail", id) → {"state":"ok"|"loading", "subject", "parts":[{from, fromEmail, to, date, html}]}
+//                                      (mit id: "loading", solange noch eine andere Nachricht angezeigt wird)
 //
 // Webseiten ändern sich: Jeder Anbieter hat mehrere Selektoren, zuerst stabile Attribute (role, data-*, email),
 // danach Klassennamen. Erkennt der Leser nichts, schaltet Lu-Mail auf die Webseiten-Ansicht um.
@@ -1437,6 +1438,17 @@ public enum SharedResources {
     return JSON.stringify(object);
   }
 
+  // SPA-Navigation ohne Neuladen: Adresse setzen und dem Router (History-API) Bescheid geben.
+  function routeTo(path) {
+    try {
+      history.pushState(history.state, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Zeilen des sichtbaren Textes – Notlösung, wenn die Selektoren für Absender/Betreff nichts finden.
   function lines(el) {
     return String((el && el.innerText) || "").split(/\n+/).map(function (l) { return l.trim(); }).filter(function (l) {
@@ -1536,18 +1548,33 @@ public enum SharedResources {
       }).map(function (item, index) { return fillFromLines(item, rows[index]); }).filter(function (item) { return item.id; });
       return { state: "ok", items: items };
     },
+    // Auch versteckte Zeilen anklicken: ist eine Unterhaltung offen, blendet Gmail die Liste nur aus.
+    // Fehlt die Zeile ganz, direkt über die Adresse öffnen (#<ordner>/<thread-id>).
     open: function (id) {
-      var rows = this.rows() || [];
-      for (var i = 0; i < rows.length; i++) {
-        if (this.rowId(rows[i]) === id) {
-          return press(q(rows[i], "[data-legacy-thread-id], [data-thread-id]") || rows[i]);
-        }
+      var markers = qa(document, "[data-legacy-thread-id], [data-thread-id]");
+      for (var i = 0; i < markers.length; i++) {
+        var marker = markers[i];
+        if (marker.closest("h2")) continue;
+        var markerId = attr(marker, "data-legacy-thread-id") || attr(marker, "data-thread-id").replace(/^#?thread-f:/, "");
+        if (markerId === id) return press(marker);
       }
-      return false;
+      var parts = location.hash.replace(/^#/, "").split("/");
+      var base = parts[0] === "label" ? parts.slice(0, 2).join("/") : (parts[0] === "category" || !parts[0] ? "inbox" : parts[0]);
+      location.hash = "#" + base + "/" + id;
+      return true;
     },
-    message: function () {
+    // Zeigt Gmail gerade die Unterhaltung mit dieser (alten) Thread-ID? Die Liste bleibt versteckt im DOM, deshalb nur
+    // Betreff-Überschrift und Nachrichten prüfen. Ohne Kennungen: annehmen (der Betreffvergleich der App greift dann).
+    shows: function (main, id) {
+      var heading = q(main, "h2[data-legacy-thread-id]");
+      if (heading) return attr(heading, "data-legacy-thread-id") === id;
+      var ids = qa(main, "[data-legacy-message-id]").map(function (el) { return attr(el, "data-legacy-message-id"); });
+      return !ids.length || ids.indexOf(id) >= 0;
+    },
+    message: function (expected) {
       var main = q(document, '[role="main"]');
       if (!main) return { state: "loading" };
+      if (expected && !this.shows(main, expected)) return { state: "loading" };
       var subject = first(main, ["h2[data-thread-perm-id]", "h2.hP", "h2"]);
       var containers = qa(main, "[data-message-id], [data-legacy-message-id]");
       var parts = containers.map(function (container) {
@@ -1643,12 +1670,16 @@ public enum SharedResources {
       });
       return { state: "ok", items: items };
     },
+    // Eintrag anklicken – auch wenn die Liste gerade ausgeblendet ist. Ist sie gar nicht da (schmales Fenster: Proton
+    // zeigt dann nur die offene Unterhaltung), über die Adresse öffnen: /u/<n>/<ordner>/<ID>.
     open: function (id) {
-      var rows = this.rows();
-      for (var i = 0; i < rows.length; i++) {
-        if (attr(rows[i], "data-element-id") === id) return press(rows[i]);
+      var all = qa(document, "[data-element-id]");
+      for (var i = 0; i < all.length; i++) {
+        if (attr(all[i], "data-element-id") === id && !this.isPlaceholder(all[i])) return press(all[i]);
       }
-      return false;
+      var segments = location.pathname.split("/");
+      var base = segments[1] === "u" ? "/u/" + segments[2] + "/" + segments[3] : "/" + segments[1];
+      return routeTo(base + "/" + encodeURIComponent(id));
     },
     // Fertig geladener Inhalt eines Nachrichten-iframes (auch ohne Text, z. B. nur Bilder oder Anhang).
     frameBody: function (frame) {
@@ -1661,11 +1692,22 @@ public enum SharedResources {
         return "";
       }
     },
-    message: function () {
+    // Zeigt Proton gerade diese Unterhaltung/Nachricht? Nach dem Klick steht kurz noch die vorige da.
+    shows: function (id, capture) {
+      var messages = capture.messages || {};
+      var articleIds = qa(document, "article[data-message-id]").map(function (a) { return attr(a, "data-message-id"); });
+      if (articleIds.indexOf(id) >= 0) return true;
+      var known = articleIds.filter(function (m) { return messages[m] && messages[m].ConversationID; });
+      if (known.some(function (m) { return messages[m].ConversationID === id; })) return true;
+      // Unbekannte Nachrichten (noch nicht mitgeschnitten): dann zählt die Adresse (…/inbox/<ID>).
+      return !known.length && location.pathname.split("/").indexOf(id) >= 0;
+    },
+    message: function (expected) {
       var capture = captured();
       var allMessages = capture.messages || {};
       var self = this;
       var parts = [];
+      if (expected && !this.shows(expected, capture)) return { state: "loading" };
       // Jede aufgeklappte Nachricht ist ein article mit ihrer ID – so passen Absender und Datum sicher zum Inhalt.
       qa(document, "article[data-message-id]").forEach(function (article) {
         var frame = q(article, 'iframe[data-testid="content-iframe"]');
@@ -1736,13 +1778,16 @@ public enum SharedResources {
       return { state: "ok", items: items };
     },
     open: function (id) {
-      var rows = this.rows();
-      for (var i = 0; i < rows.length; i++) {
-        if (attr(rows[i], "href") === id) return press(rows[i]);
+      var links = qa(document, "a[href]");
+      for (var i = 0; i < links.length; i++) {
+        if (attr(links[i], "href") === id) return press(links[i]);
       }
-      return false;
+      return /^\//.test(id) ? routeTo(id) : false;
     },
-    message: function () {
+    message: function (expected) {
+      // Die Adresse enthält die ID der Nachricht (…/inbox/0:1234:0/) – solange sie nicht passt, lädt sie noch.
+      var core = expected && (String(expected).match(/\d+:[^/]+/) || [])[0];
+      if (core && location.pathname.indexOf(core) < 0) return { state: "loading" };
       var body = first(document, [".letter-body__body-content", ".letter__body", '[class*="letter-body"]', '[class*="letter__body"]']);
       if (!body) return { state: "loading" };
       var subject = first(document, [".thread-subject", ".thread__subject", '[class*="thread__subject"]', "h2"]);
@@ -1786,10 +1831,10 @@ public enum SharedResources {
     version: 1,
     list: function (name) { return run(name, function (a) { return checked(a.list()); }); },
     open: function (name, id) { return run(name, function (a) { return { state: a.open(id) ? "ok" : "missing" }; }); },
-    message: function (name) { return run(name, function (a) { return a.message(); }); },
+    message: function (name, id) { return run(name, function (a) { return a.message(id); }); },
   };
 })();
-"""#
+"""##
 
     /// shared/webmail/lu-capture.js
     public static let webmailCaptureJS = #"""

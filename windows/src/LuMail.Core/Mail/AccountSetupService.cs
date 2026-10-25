@@ -102,11 +102,30 @@ public sealed class AccountSetupService
         AccountRemoved?.Invoke(this, account);
     }
 
-    private Account FindOrCreate(Provider provider, string email, string? displayName, string authMethod)
+    /// <summary>
+    /// §20 „Jetzt umstellen“: Das neue IMAP-Konto <paramref name="replacement"/> ersetzt das Web-Konto
+    /// <paramref name="web"/> – das Web-Konto wird entfernt (AccountRemoved → WebView2-Profil/Cookies löschen).
+    /// </summary>
+    public async Task ReplaceWebAccountAsync(Account web, Account replacement)
     {
+        if (!web.IsWeb) throw new ArgumentException("Nur Web-Konten lassen sich so ersetzen.", nameof(web));
+        if (replacement.IsWeb || string.Equals(replacement.Id, web.Id, StringComparison.Ordinal))
+            throw new ArgumentException("Das Ersatzkonto muss ein eigenes IMAP-Konto sein.", nameof(replacement));
+        await RemoveAccountAsync(web).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Vorhandenes Konto gleicher Art (IMAP bzw. Web) mit derselben Adresse wiederverwenden, sonst neu anlegen.
+    /// Ein Web-Konto wird nie zu einem IMAP-Konto umgebaut – sonst blieben sein WebView2-Profil und der
+    /// Web-Eintrag unter derselben Id hängen.
+    /// </summary>
+    internal Account FindOrCreate(Provider provider, string email, string? displayName, string authMethod)
+    {
+        var web = string.Equals(authMethod, Account.AuthWeb, StringComparison.OrdinalIgnoreCase);
         var existing = _accounts.Load().FirstOrDefault(a =>
             string.Equals(a.ProviderId, provider.Id, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(a.Email, email, StringComparison.OrdinalIgnoreCase));
+            && string.Equals(a.Email, email, StringComparison.OrdinalIgnoreCase)
+            && a.IsWeb == web);
         var account = existing ?? new Account { ProviderId = provider.Id, Email = email };
         account.AuthMethod = authMethod;
         if (!string.IsNullOrWhiteSpace(displayName)) account.DisplayName = displayName!;
