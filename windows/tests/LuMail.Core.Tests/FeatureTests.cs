@@ -856,7 +856,8 @@ public class WebReaderTests
         Assert.Equal(expected, WebReader.NavigationFor(current, folder));
 
     private static readonly WebReaderTiming Fast = new(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(150),
-        TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(200));
+        TimeSpan.FromMilliseconds(400), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(200))
+    { ErrorAfter = TimeSpan.FromMilliseconds(100) };
 
     private static Func<string, Task<string?>> Sequence(params string?[] results)
     {
@@ -897,6 +898,48 @@ public class WebReaderTests
         Assert.Contains("data-lu-capture", script);
         Assert.Contains("__luCaptureInstalled", script);
         Assert.Contains(LuMail.Core.Resources.SharedResources.Prefix + "lu-capture.js", LuMail.Core.Resources.SharedResources.ResourceNames);
+    }
+
+    [Fact]
+    public async Task PollList_ErrorFailsOnlyWhenPersistent_UnsupportedImmediately()
+    {
+        Assert.Equal(4, WebReaderTiming.Default.ErrorAfter.TotalSeconds);
+
+        // kurzes "error" (halb aufgebaute Seite) → weiter abfragen
+        var recovered = await WebReader.PollListAsync(Sequence("""{"state":"error","reason":"unreadable"}""", """{"state":"ok","items":[{"id":"1"}]}"""), "proton", Fast);
+        Assert.Equal((WebReaderOutcome.Ok, 1), (recovered.Outcome, recovered.Items.Count));
+
+        // anhaltendes "error" → Failed nach ErrorAfter, nicht erst nach dem Zeitlimit
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal(WebReaderOutcome.Failed, (await WebReader.PollListAsync(Sequence("""{"state":"error"}"""), "proton", Fast)).Outcome);
+        Assert.InRange(clock.ElapsedMilliseconds, 100, 380);
+
+        clock.Restart();
+        Assert.Equal(WebReaderOutcome.Failed, (await WebReader.PollListAsync(Sequence("""{"state":"unsupported"}"""), "proton", Fast)).Outcome);
+        Assert.True(clock.ElapsedMilliseconds < 90);
+    }
+
+    [Fact]
+    public async Task Polling_CancelThrows_NeverFailed()
+    {
+        using var cts = new CancellationTokenSource();
+        var calls = 0;
+        Func<string, Task<string?>> execute = _ =>
+        {
+            if (++calls == 3) cts.Cancel();
+            return Task.FromResult<string?>(Wrap("""{"state":"loading"}"""));
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WebReader.PollListAsync(execute, "gmail", Fast, cts.Token));
+        Assert.Equal(3, calls);
+
+        using var cts2 = new CancellationTokenSource();
+        calls = 0;
+        Func<string, Task<string?>> message = _ =>
+        {
+            if (++calls == 2) cts2.Cancel();
+            return Task.FromResult<string?>(Wrap(calls == 1 ? """{"state":"ok"}""" : """{"state":"loading"}"""));
+        };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => WebReader.OpenAndPollMessageAsync(message, "gmail", "1", Fast, cts2.Token));
     }
 
     [Fact]

@@ -66,6 +66,12 @@ public sealed record WebReaderTiming(TimeSpan ListInterval, TimeSpan EmptyAfter,
 {
     public static WebReaderTiming Default { get; } = new(TimeSpan.FromMilliseconds(700), TimeSpan.FromSeconds(4),
         TimeSpan.FromSeconds(20), TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(15));
+
+    /// <summary>
+    /// <c>error</c> der Liste gilt erst als gescheitert, wenn es länger als so lange nach Beginn der Abfrage anhält
+    /// (eine halb aufgebaute Seite meldet kurz <c>error</c>, z. B. die Qualitätsprüfung bei Platzhalterzeilen).
+    /// </summary>
+    public TimeSpan ErrorAfter { get; init; } = TimeSpan.FromSeconds(4);
 }
 
 /// <summary>Wie der Hintergrund-Browser zur Ordneradresse kommt.</summary>
@@ -164,7 +170,9 @@ public static class WebReader
 
     /// <summary>
     /// Alle 0,7 s <c>list</c> bis <c>ok</c> mit Einträgen; eine leere Liste gilt erst nach 4 s als leer.
-    /// <c>login</c> → NeedsLogin; <c>error</c>/<c>unsupported</c> oder 20 s ohne Ergebnis → Failed.
+    /// <c>login</c> → NeedsLogin; <c>unsupported</c> → sofort Failed; <c>error</c> erst, wenn es länger als 4 s nach
+    /// Beginn anhält (vorher weiter abfragen); 20 s ohne Ergebnis → Failed. Abbruch über <paramref name="ct"/>
+    /// wirft <see cref="OperationCanceledException"/> (nie Failed).
     /// </summary>
     public static async Task<(WebReaderOutcome Outcome, IReadOnlyList<WebReaderItem> Items)> PollListAsync(
         Func<string, Task<string?>> execute, string reader, WebReaderTiming? timing = null, CancellationToken ct = default)
@@ -182,7 +190,8 @@ public static class WebReader
                     return (WebReaderOutcome.Ok, result.Items);
                 case WebReaderState.Login:
                     return (WebReaderOutcome.NeedsLogin, Array.Empty<WebReaderItem>());
-                case WebReaderState.Error or WebReaderState.Unsupported:
+                case WebReaderState.Unsupported:
+                case WebReaderState.Error when clock.Elapsed > t.ErrorAfter:
                     return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
             }
             if (clock.Elapsed >= t.ListTimeout) return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());

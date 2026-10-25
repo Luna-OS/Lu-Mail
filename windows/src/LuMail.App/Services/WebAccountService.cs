@@ -240,10 +240,14 @@ public sealed class WebAccountService
             return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
         if (entry.Ready is not null) await entry.Ready;
         if (entry.View.CoreWebView2 is null) return (WebReaderOutcome.Failed, Array.Empty<WebReaderItem>());
+        ct.ThrowIfCancellationRequested();
 
+        // Abbruch (anderer Ordner/anderes Konto/Lu-Ansicht verlassen) wirkt in der Warteschlange, beim Navigieren und
+        // in der Abfrage-Schleife – als OperationCanceledException, nie als Failed.
         await entry.Queue.WaitAsync(ct);
         try
         {
+            ct.ThrowIfCancellationRequested();
             var core = entry.View.CoreWebView2;
             var folderUrl = WebMail.FolderUrl(entry.Provider.Web, folderKey) ?? entry.Provider.Web.HomeUrl;
             switch (WebReader.NavigationFor(core.Source, folderUrl))
@@ -276,6 +280,7 @@ public sealed class WebAccountService
         {
             core.Navigate(url);
             await Task.WhenAny(changed.Task, Task.Delay(5000, ct));
+            ct.ThrowIfCancellationRequested();
             await Task.Delay(800, ct);
         }
         finally
@@ -291,9 +296,11 @@ public sealed class WebAccountService
         if (!_entries.TryGetValue(account.Id, out var entry) || entry.Provider.Web?.Reader is not { Length: > 0 } reader) return null;
         if (entry.Ready is not null) await entry.Ready;
         if (entry.View.CoreWebView2 is null) return null;
+        ct.ThrowIfCancellationRequested();
         await entry.Queue.WaitAsync(ct);
         try
         {
+            ct.ThrowIfCancellationRequested();
             return await WebReader.OpenAndPollMessageAsync(script => ExecuteAsync(entry, script), reader, item.Id, ct: ct);
         }
         finally
