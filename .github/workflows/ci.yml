@@ -62,7 +62,11 @@ jobs:
             echo "ok – $f"
           done
       - name: Web-Leser (JavaScript) prüfen
-        run: node --check shared/webmail/lu-webmail.js
+        run: |
+          node --check shared/webmail/lu-webmail.js
+          node --check shared/webmail/lu-capture.js
+      - name: Update-Skript (macOS) prüfen
+        run: bash -n scripts/update-mac.sh
       - name: SharedResources.swift aktuell?
         run: python3 scripts/sync-shared.py --check
       - name: Keine Client-IDs im Repository
@@ -101,10 +105,16 @@ jobs:
         run: macos/scripts/build-app.sh
       - name: Disk-Image erstellen
         run: macos/scripts/build-dmg.sh "build/Lu-Mail-$VERSION-macOS.dmg"
+      - name: Update-Skript beilegen
+        run: cp scripts/update-mac.sh macos/build/update-mac.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Lu-Mail-macOS
-          path: macos/build/Lu-Mail-*-macOS.dmg
+          # update-mac.sh: Terminal-Update (curl … /releases/latest/download/update-mac.sh | bash).
+          # Beide Dateien liegen in macos/build, damit das Artefakt flach bleibt.
+          path: |
+            macos/build/Lu-Mail-*-macOS.dmg
+            macos/build/update-mac.sh
           if-no-files-found: error
 
   windows:

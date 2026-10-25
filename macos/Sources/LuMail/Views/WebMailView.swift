@@ -142,7 +142,6 @@ struct WebInboxView: View {
                         .frame(minWidth: 380, maxWidth: .infinity)
                 }
             }
-            .background(LuTheme.background)
         }
         .navigationTitle(model.title)
         .task(id: "\(key)|\(refreshToken)") { await refreshLoop() }
@@ -217,7 +216,12 @@ struct WebInboxView: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(LuTheme.background)
+        .background {
+            ZStack {
+                NightSkyLayer()
+                LuTheme.listPane
+            }
+        }
     }
 
     // MARK: Lesebereich
@@ -297,7 +301,12 @@ struct WebInboxView: View {
                 Text(provider.name + " · " + account.label)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(LuTheme.background)
+            .background {
+                ZStack {
+                    NightSkyLayer()
+                    LuTheme.emptyPane
+                }
+            }
         }
     }
 

@@ -50,7 +50,11 @@ public sealed partial class MainPage : Page
         Vm = new MainViewModel(App.Services, action => DispatcherQueue.TryEnqueue(() => action()));
         InitializeComponent();
         Loaded += OnLoaded;
-        ActualThemeChanged += (_, _) => RenderCurrent();
+        ActualThemeChanged += (_, _) =>
+        {
+            RenderCurrent();
+            ApplySky();
+        };
     }
 
     public MainViewModel Vm { get; }
@@ -74,6 +78,7 @@ public sealed partial class MainPage : Page
 
         SidebarList.ItemsSource = Vm.Sidebar;
         MessageList.ItemsSource = Vm.Messages;
+        ApplySky();
         ConversationToggle.IsChecked = Vm.ConversationsEnabled;
         Vm.PropertyChanged += OnViewModelPropertyChanged;
         Vm.MessagesReset += OnMessagesReset;
@@ -175,6 +180,7 @@ public sealed partial class MainPage : Page
         ListSubtitleText.Text = Vm.ListSubtitle;
         OfflineText.Visibility = Vm.IsOffline ? Visibility.Visible : Visibility.Collapsed;
         WelcomePanel.Visibility = Vm.WelcomeVisibility;
+        if ((Vm.WelcomeVisibility == Visibility.Visible) != _skyWelcome) ApplySky();
         EmptyText.Visibility = Vm.HasAccounts && Vm.Messages.Count == 0 && !Vm.IsBusy ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -403,6 +409,7 @@ public sealed partial class MainPage : Page
     {
         ReaderPlaceholder.Visibility = Visibility.Collapsed;
         ReaderPanel.Visibility = Visibility.Visible;
+        UpdateReaderBackground();
 
         ReaderSubject.Text = item.ThreadCount > 1 ? $"{item.Subject} ({item.ThreadCount})" : item.Subject;
         var from = detail?.From;
@@ -530,6 +537,7 @@ public sealed partial class MainPage : Page
         _selectedKey = null;
         ReaderPanel.Visibility = Visibility.Collapsed;
         ReaderPlaceholder.Visibility = Visibility.Visible;
+        UpdateReaderBackground();
         ReaderLoading.IsActive = false;
         if (_webViewReady)
         {
@@ -911,6 +919,7 @@ public sealed partial class MainPage : Page
         if (!_s.Settings.AppLock) return;
         _locked = true;
         LockOverlay.Visibility = Visibility.Visible;
+        ApplySky();
         if (promptNow) DispatcherQueue.TryEnqueue(async () => await TryUnlockAsync());
     }
 
@@ -925,6 +934,7 @@ public sealed partial class MainPage : Page
             {
                 _locked = false;
                 LockOverlay.Visibility = Visibility.Collapsed;
+                ApplySky();
             }
         }
         catch (Exception ex)
@@ -945,6 +955,95 @@ public sealed partial class MainPage : Page
             && DateTimeOffset.Now - since >= TimeSpan.FromMinutes(Math.Max(1, _s.Settings.AppLockMinutes)))
             Lock(promptNow: true);
         _deactivatedAt = null;
+    }
+
+    // ======================================================== Nachthimmel (§22)
+
+    private bool _skyWelcome;
+    private bool _skyShown;
+    private bool _skyDark;
+
+    /// <summary>
+    /// Himmel und Flächen abstimmen: dunkel → Himmel hinter durchscheinender Seitenleiste/Liste (72 %), Lesebereich
+    /// deckend; hell → alles deckend, Himmel nur auf Willkommens- und Sperrbildschirm. Aus → wie bisher.
+    /// </summary>
+    private void ApplySky()
+    {
+        var enabled = _s.Settings.NightSky && !IsHighContrast();
+        var dark = ActualTheme == ElementTheme.Dark;
+        var welcome = WelcomePanel.Visibility == Visibility.Visible;
+        _skyWelcome = welcome;
+        var show = enabled && (dark || welcome);
+        _skyShown = show;
+        _skyDark = dark;
+
+        var palette = _s.Theme.Palette(_s.Settings.ThemeVariant, dark: true, _s.Settings.Accent);
+        var moon = palette.TryGetValue("moon", out var m) ? m : "#F5D06F";
+        var accent = palette.TryGetValue("accent", out var a) ? a : "#8B7CFF";
+        Sky.ApplyColors(moon, accent);
+        LockSky.ApplyColors(moon, accent);
+        Sky.Shown = show && !_locked;
+        LockSky.Shown = enabled && _locked;
+
+        var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        LockOverlay.Background = enabled ? transparent : ThemeBrush("LuBackground");
+        AppTitleBar.Background = show && !dark ? ThemeBrush("LuSidebar") : transparent;
+        SidebarPane.Background = show ? Translucent("LuSidebar", dark ? LuMail.Core.Catalog.NightSky.PaneOpacity : 1) : null;
+        ListPane.Background = show && welcome ? transparent
+            : show && dark ? Translucent("LuBackground", LuMail.Core.Catalog.NightSky.PaneOpacity)
+            : ThemeBrush("LuBackground");
+        ReaderPlaceholder.Opacity = show && welcome ? 0 : 1;
+        UpdateReaderBackground();
+    }
+
+    /// <summary>
+    /// Lesebereich: mit geöffneter Nachricht deckend; ohne (leerer Zustand, auch in der Lu-Ansicht) im dunklen Modus
+    /// nur 15 % deckend, damit der Mond durchscheint; Willkommensbildschirm durchsichtig; heller Modus deckend.
+    /// </summary>
+    private void UpdateReaderBackground()
+    {
+        var open = ReaderPanel.Visibility == Visibility.Visible;
+        ReaderPane.Background = _skyShown && _skyWelcome && !open ? new SolidColorBrush(Microsoft.UI.Colors.Transparent)
+            : _skyShown && _skyDark && !open ? Translucent("LuSurface", LuMail.Core.Catalog.NightSky.EmptyReaderOpacity)
+            : ThemeBrush("LuSurface");
+    }
+
+    /// <summary>Fenster minimiert/verborgen → Himmel anhalten.</summary>
+    public void SetWindowVisible(bool visible)
+    {
+        Sky.WindowVisible = visible;
+        LockSky.WindowVisible = visible;
+    }
+
+    private static bool IsHighContrast()
+    {
+        try { return new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast; }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>Pinsel aus App.xaml → ThemeDictionaries für das aktuelle Theme (wird von ThemeService umgefärbt).</summary>
+    private Brush ThemeBrush(string key)
+    {
+        var dictionaries = Application.Current.Resources.ThemeDictionaries;
+        foreach (var name in ActualTheme == ElementTheme.Dark ? new[] { "Dark", "Default" } : new[] { "Light" })
+        {
+            if (dictionaries.TryGetValue(name, out var value) && value is ResourceDictionary rd
+                && rd.TryGetValue(key, out var brush) && brush is Brush b) return b;
+        }
+        return Application.Current.Resources.TryGetValue(key, out var any) && any is Brush fallback
+            ? fallback
+            : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+    }
+
+    private Brush Translucent(string key, double opacity) =>
+        ThemeBrush(key) is SolidColorBrush solid ? new SolidColorBrush(solid.Color) { Opacity = opacity } : ThemeBrush(key);
+
+    /// <summary>Webseiten-Ansicht an/aus: nur dann ist das Webmail sichtbar und bedienbar (sonst Opacity 0, damit der
+    /// Himmel durch die durchscheinende Liste scheint und nicht die Webseite).</summary>
+    private void SetWebsiteMode(bool on)
+    {
+        WebPanel.IsHitTestVisible = on;
+        WebPanel.Opacity = on ? 1 : 0;
     }
 
     // ======================================================== Web-Konten
@@ -970,7 +1069,7 @@ public sealed partial class MainPage : Page
             _webListTimer?.Stop();
             App.Web.HideAll();
             WebInfoBar.IsOpen = false;
-            WebPanel.IsHitTestVisible = true;
+            SetWebsiteMode(false);
             WebsiteButton.Visibility = Visibility.Collapsed;
             ConversationToggle.Visibility = Visibility.Visible;
             ListPane.Visibility = Visibility.Visible;
@@ -986,8 +1085,8 @@ public sealed partial class MainPage : Page
     private async Task ShowLuViewAsync(SidebarItem item, Account account)
     {
         _webLuActive = true;
-        // Webseite bleibt in voller Größe sichtbar dahinter (rendert weiter), nimmt aber keine Eingaben an.
-        WebPanel.IsHitTestVisible = false;
+        // Webseite bleibt in voller Größe geladen dahinter (rendert weiter), unsichtbar und ohne Eingaben.
+        SetWebsiteMode(false);
         ListPane.Visibility = Visibility.Visible;
         ReaderPane.Visibility = Visibility.Visible;
         WebsiteButton.Visibility = Visibility.Visible;
@@ -1010,7 +1109,7 @@ public sealed partial class MainPage : Page
     {
         _webLuActive = false;
         _webListTimer?.Stop();
-        WebPanel.IsHitTestVisible = true;
+        SetWebsiteMode(true);
         ListPane.Visibility = Visibility.Collapsed;
         ReaderPane.Visibility = Visibility.Collapsed;
         WebsiteButton.Visibility = Visibility.Collapsed;
@@ -1050,7 +1149,7 @@ public sealed partial class MainPage : Page
                     break;
                 default:
                     _webFallback.Add(account.Id);
-                    WebInfoBar.Message = $"Die Lu-Ansicht kann {provider?.Name ?? "diesen Anbieter"} gerade nicht lesen – Webseite wird angezeigt.";
+                    WebInfoBar.Message = $"Die Lu-Ansicht kann {provider?.Name ?? "diesen Anbieter"} gerade nicht lesen – die Webseite wird angezeigt.";
                     WebInfoBar.IsOpen = true;
                     await ShowWebsiteAsync(account, key, navigate: true);
                     break;
@@ -1169,7 +1268,7 @@ public sealed partial class MainPage : Page
         }
         _webLuActive = false;
         _webListTimer?.Stop();
-        WebPanel.IsHitTestVisible = true;
+        SetWebsiteMode(true);
         ListPane.Visibility = Visibility.Collapsed;
         ReaderPane.Visibility = Visibility.Collapsed;
         WebsiteButton.Visibility = Visibility.Collapsed;
@@ -1236,6 +1335,7 @@ public sealed partial class MainPage : Page
         {
             if (HostWindow is not null) ThemeService.ApplyMode(HostWindow, _s.Settings);
             RenderCurrent();
+            ApplySky();
         };
         window.Page.DataChanged += (_, _) => Vm.RebuildSidebar();
         window.Closed += async (_, _) =>
@@ -1253,6 +1353,7 @@ public sealed partial class MainPage : Page
         _s.Mail.Cache = _s.Settings.OfflineCache ? _s.Cache : null;
         ThemeService.ApplyPalette(_s.Theme, _s.Settings);
         if (HostWindow is not null) ThemeService.ApplyMode(HostWindow, _s.Settings);
+        ApplySky();
         if (accountsChanged)
         {
             ClearReader();

@@ -72,6 +72,11 @@ final class WebMailService {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         // Auch im Hintergrund weiterlaufen, damit der Ungelesen-Zähler aktuell bleibt.
         configuration.preferences.inactiveSchedulingPolicy = WKPreferences.InactiveSchedulingPolicy.none
+        // Mitschnitt der Webmail-API für die Lu-Ansicht (§21) – im Seitenkontext ab Dokumentbeginn.
+        if config.reader != nil {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: SharedResources.webmailCaptureJS, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        }
         // Feste Größe, damit das Webmail auch unsichtbar im Hintergrund vollständig gerendert wird.
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: configuration)
         webView.customUserAgent = ProviderCatalog.shared.webUserAgent["macos"]

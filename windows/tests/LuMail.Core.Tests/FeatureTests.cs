@@ -879,6 +879,27 @@ public class WebReaderTests
     }
 
     [Fact]
+    public async Task UnreadableList_IsError_AndFails()
+    {
+        // Qualitätsprüfung von lu-webmail.js: zusätzliches Feld "reason" wird vertragen.
+        const string unreadable = """{"state":"error","reason":"unreadable","items":[]}""";
+        var list = WebReader.DecodeList(Wrap(unreadable))!;
+        Assert.Equal((WebReaderState.Error, "unreadable", 0), (list.State, list.Reason, list.Items.Count));
+        Assert.Null(WebReader.DecodeList(Wrap("""{"state":"ok","items":[]}"""))!.Reason);
+        var polled = await WebReader.PollListAsync(Sequence("""{"state":"loading"}""", unreadable), "proton", Fast);
+        Assert.Equal((WebReaderOutcome.Failed, 0), (polled.Outcome, polled.Items.Count));
+    }
+
+    [Fact]
+    public void CaptureScriptIsEmbedded()
+    {
+        var script = LuMail.Core.Resources.SharedResources.CaptureScript;
+        Assert.Contains("data-lu-capture", script);
+        Assert.Contains("__luCaptureInstalled", script);
+        Assert.Contains(LuMail.Core.Resources.SharedResources.Prefix + "lu-capture.js", LuMail.Core.Resources.SharedResources.ResourceNames);
+    }
+
+    [Fact]
     public async Task OpenAndPollMessage()
     {
         var m = await WebReader.OpenAndPollMessageAsync(Sequence("""{"state":"ok"}""", """{"state":"loading"}""", """{"state":"ok","subject":"S","parts":[]}"""), "gmail", "1", Fast);
@@ -903,5 +924,87 @@ public class WebReaderTests
         Assert.Contains("<details><summary>Anna &lt;a@x.de&gt;<span>Gestern</span>", html);
         Assert.Contains("An: Ich &lt;i@y.de&gt;", html);
         Assert.Contains("<details open><summary>Bob", html);
+    }
+}
+
+public class NightSkyTests
+{
+    [Fact]
+    public void Stars_AreDeterministicAndInRange()
+    {
+        var a = NightSky.Stars();
+        var b = NightSky.Stars();
+        Assert.Equal(160, a.Count);
+        Assert.Equal(a, b); // fester Startwert
+        Assert.NotEqual(a, NightSky.Stars(seed: 1));
+        Assert.All(a, s =>
+        {
+            Assert.InRange(s.X, 0, 1);
+            Assert.InRange(s.Y, 0, 1);
+            Assert.InRange(s.Size, 0.8, 2.4);
+            Assert.InRange(s.Period, 2, 6);
+            Assert.InRange(s.Phase, 0, s.Period);
+            Assert.InRange(s.RestOpacity, 0.25, 1);
+        });
+        Assert.True(a.Count(s => s.Tint == SkyStarTint.White) > 80);
+        Assert.Contains(a, s => s.Tint == SkyStarTint.Blue);
+        Assert.Contains(a, s => s.Tint == SkyStarTint.Yellow);
+        Assert.True(a.Select(s => Math.Round(s.Period, 2)).Distinct().Count() > 100); // eigene Periode je Stern
+    }
+
+    [Theory]
+    [InlineData(4.0, 0.0)]
+    [InlineData(4.0, 1.0)]
+    [InlineData(4.0, 2.0)]
+    [InlineData(3.0, 2.9)]
+    [InlineData(5.5, 7.0)]
+    public void Twinkle_IsSeamlessShiftedTriangle(double period, double phase)
+    {
+        var frames = NightSky.Twinkle(period, phase);
+        Assert.Equal(0, frames[0].Time);
+        Assert.Equal(period, frames[^1].Time, 6);
+        Assert.Equal(frames[0].Value, frames[^1].Value, 6);
+        Assert.True(frames.Zip(frames.Skip(1)).All(p => p.First.Time < p.Second.Time));
+        Assert.All(frames, f => Assert.InRange(f.Value, 0.25, 1.0));
+        Assert.Contains(frames, f => Math.Abs(f.Value - 1.0) < 1e-9);
+        Assert.Contains(frames, f => Math.Abs(f.Value - 0.25) < 1e-9);
+        Assert.InRange(frames.Count, 3, 4);
+    }
+
+    [Fact]
+    public void Twinkle_PhaseZeroStartsLow_HalfStartsHigh()
+    {
+        Assert.Equal(new[] { new SkyKeyFrame(0, 0.25), new SkyKeyFrame(2, 1), new SkyKeyFrame(4, 0.25) }, NightSky.Twinkle(4, 0));
+        Assert.Equal(new[] { new SkyKeyFrame(0, 1), new SkyKeyFrame(2, 0.25), new SkyKeyFrame(4, 1) }, NightSky.Twinkle(4, 2));
+        var quarter = NightSky.Twinkle(4, 1);
+        Assert.Equal(0.625, quarter[0].Value, 6);
+        Assert.Equal(new SkyKeyFrame(1, 1), quarter[1]);
+        Assert.Equal(new SkyKeyFrame(3, 0.25), quarter[2]);
+    }
+
+    [Fact]
+    public void ShootingStarDelay_Between9And18Seconds()
+    {
+        var random = new Random(7);
+        for (var i = 0; i < 200; i++) Assert.InRange(NightSky.NextShootingDelay(random).TotalSeconds, 9, 18);
+    }
+
+    [Fact]
+    public void Setting_DefaultsOnAndPersists()
+    {
+        Assert.True(new AppSettings().NightSky);
+        var path = Path.Combine(Path.GetTempPath(), "lumail-sky-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            File.WriteAllText(path, "{\"themeMode\":\"dark\"}");
+            Assert.True(AppSettings.Load(path).NightSky); // ältere Datei ohne Feld → an
+            var settings = new AppSettings { NightSky = false };
+            settings.Save(path);
+            Assert.False(AppSettings.Load(path).NightSky);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

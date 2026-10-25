@@ -162,13 +162,17 @@ final class ThemeSettings {
     private(set) var mode: Mode = Mode(rawValue: UserDefaults.standard.string(forKey: "themeMode") ?? "") ?? .system
     private(set) var variant: String = UserDefaults.standard.string(forKey: "themeVariant") ?? "luna"
     private(set) var accent: String = UserDefaults.standard.string(forKey: "themeAccent") ?? "lila"
+    /// Animierter Nachthimmel als Hintergrund (§22).
+    private(set) var nightSky: Bool = UserDefaults.standard.object(forKey: "nightSky") as? Bool ?? true
     /// Zählt jede Änderung hoch – die Oberfläche baut sich damit neu auf.
     private(set) var revision = 0
 
-    func set(mode: Mode? = nil, variant: String? = nil, accent: String? = nil) {
+    func set(mode: Mode? = nil, variant: String? = nil, accent: String? = nil, nightSky: Bool? = nil) {
         if let mode { self.mode = mode }
         if let variant { self.variant = variant }
         if let accent { self.accent = accent }
+        if let nightSky { self.nightSky = nightSky }
+        UserDefaults.standard.set(self.nightSky, forKey: "nightSky")
         UserDefaults.standard.set(self.mode.rawValue, forKey: "themeMode")
         UserDefaults.standard.set(self.variant, forKey: "themeVariant")
         UserDefaults.standard.set(self.accent, forKey: "themeAccent")

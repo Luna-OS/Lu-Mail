@@ -45,7 +45,13 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(LuTheme.sidebar)
+        .background {
+            ZStack {
+                NightSkyLayer()
+                LuTheme.sidebarPane
+            }
+            .ignoresSafeArea()
+        }
         .safeAreaInset(edge: .bottom) {
             Button {
                 model.showAddAccount = true
@@ -56,7 +62,7 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .foregroundStyle(LuTheme.accent)
             .padding(12)
-            .background(LuTheme.sidebar)
+            .background(LuTheme.sidebarPane)
         }
     }
 

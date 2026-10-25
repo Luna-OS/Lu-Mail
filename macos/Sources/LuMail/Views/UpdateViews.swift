@@ -26,6 +26,17 @@ struct UpdateBar: View {
                 Button("Jetzt neu starten") { updates.installAndRelaunch() }
                     .buttonStyle(.borderedProminent)
             }
+        case .failed(let message):
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(LuTheme.danger)
+                Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Schließen") { updates.dismissFailure() }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(LuTheme.danger.opacity(0.10))
+            .overlay(alignment: .bottom) { Divider().overlay(LuTheme.border) }
         default:
             EmptyView()
         }
@@ -74,9 +85,18 @@ struct UpdateSettingsView: View {
                     Spacer()
                     statusText
                 }
-                Text("Updates kommen direkt aus den offiziellen GitHub-Releases von Lu-Mail und werden vor der Installation per SHA-256-Prüfsumme kontrolliert.")
+                Text("Updates kommen direkt aus den offiziellen GitHub-Releases von Lu-Mail. Vor der Installation werden Prüfsumme (SHA-256), Bundle-ID, Version und Signatur der neuen App kontrolliert; Konten und Einstellungen bleiben erhalten.")
                     .font(.caption)
                     .foregroundStyle(LuTheme.textSecondary)
+            }
+            Section("Im Terminal aktualisieren") {
+                Text(UpdateManager.terminalCommand)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                Button("Befehl kopieren") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(UpdateManager.terminalCommand, forType: .string)
+                }
             }
         }
         .formStyle(.grouped)
@@ -92,6 +112,25 @@ struct UpdateSettingsView: View {
         case .ready(let update): Text("Version \(update.version) bereit").foregroundStyle(LuTheme.accent)
         case .failed(let message): Text(message).foregroundStyle(LuTheme.danger).lineLimit(3)
         case .idle: EmptyView()
+        }
+    }
+}
+
+/// Button „Update“ in der Symbolleiste, sobald eine neue Version bereitliegt (wie bei Moon Browser).
+struct UpdateToolbarButton: View {
+    @State private var updates = UpdateManager.shared
+
+    var body: some View {
+        if case .ready(let update) = updates.state {
+            Button {
+                updates.installAndRelaunch()
+            } label: {
+                Label("Update", systemImage: "arrow.down.circle.fill")
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(LuTheme.accent)
+            .help("Lu-Mail \(update.version) installieren und neu starten – Konten und Einstellungen bleiben erhalten")
         }
     }
 }

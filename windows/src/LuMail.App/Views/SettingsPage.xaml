@@ -91,6 +91,11 @@
                         <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource LuTextPrimary}" Text="Akzentfarbe" />
                         <ComboBox x:Name="AccentBox" MinWidth="220" SelectionChanged="OnAppearanceChanged" />
                     </StackPanel>
+                    <StackPanel Spacing="2">
+                        <ToggleSwitch x:Name="NightSkySwitch" Header="Animierter Nachthimmel" OffContent="Aus" OnContent="An" Toggled="OnNightSkyToggled" />
+                        <TextBlock FontSize="12" Foreground="{ThemeResource LuTextSecondary}" TextWrapping="Wrap"
+                                   Text="Sterne und Mond hinter Seitenleiste und Liste (im hellen Modus nur auf dem Willkommens- und Sperrbildschirm). Steht still, wenn die Windows-Animationen ausgeschaltet sind." />
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
             <ScrollViewer x:Name="AccountsSection" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">

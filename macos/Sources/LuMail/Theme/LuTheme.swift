@@ -24,6 +24,11 @@ enum LuTheme {
     static var danger: Color { adaptive(\.danger) }
     static var success: Color { adaptive(\.success) }
 
+    /// Flächen über dem Nachthimmel (§22): im dunklen Modus durchscheinend, im hellen deckend.
+    static var sidebarPane: Color { pane(\.sidebar, darkOpacity: 0.72) }
+    static var listPane: Color { pane(\.background, darkOpacity: 0.72) }
+    static var emptyPane: Color { pane(\.surface, darkOpacity: 0.15) }
+
     static let radiusSmall = CGFloat(ThemeTokens.shared.radius.small)
     static let radiusMedium = CGFloat(ThemeTokens.shared.radius.medium)
     static let radiusLarge = CGFloat(ThemeTokens.shared.radius.large)
@@ -44,6 +49,16 @@ enum LuTheme {
     private static func adaptive(_ keyPath: KeyPath<ThemeTokens.Palette, String>) -> Color {
         let colors = palette
         return dynamic(light: colors.light[keyPath: keyPath], dark: colors.dark[keyPath: keyPath])
+    }
+
+    private static func pane(_ keyPath: KeyPath<ThemeTokens.Palette, String>, darkOpacity: CGFloat) -> Color {
+        let colors = palette
+        guard ThemeSettings.shared.nightSky else { return adaptive(keyPath) }
+        let lightColor = NSColor(hex: colors.light[keyPath: keyPath])
+        let darkColor = NSColor(hex: colors.dark[keyPath: keyPath]).withAlphaComponent(darkOpacity)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
+        })
     }
 
     private static func accentColor() -> Color {

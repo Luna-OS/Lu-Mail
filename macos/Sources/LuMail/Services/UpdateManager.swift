@@ -3,8 +3,10 @@ import Foundation
 import LuMailCore
 import Observation
 
-/// Auto-Updater für macOS: prüft GitHub-Releases, lädt das DMG, bereitet die neue App vor und ersetzt
-/// beim Neustart bzw. Beenden das laufende Bundle (Ablauf: docs/ARCHITEKTUR.md → Downloads & Auto-Updater).
+/// Auto-Updater für macOS (docs/FUNKTIONEN.md §23, wie Moon Browser): prüft GitHub-Releases, lädt das DMG im
+/// Hintergrund, prüft Prüfsumme, Bundle-ID, Version und Signatur der neuen App und ersetzt beim Klick auf „Update“
+/// bzw. beim Beenden das laufende Bundle. Lu-Mail ist nicht mit einer Developer-ID signiert, deshalb macht die App
+/// das selbst statt über das System.
 @MainActor
 @Observable
 final class UpdateManager {
@@ -45,6 +47,14 @@ final class UpdateManager {
     private var stagedApp: URL?
     private var downloadedDMG: URL?
     private var loopTask: Task<Void, Never>?
+    /// Der Installer läuft schon (z. B. nach „Update“) – beim Beenden keinen zweiten starten.
+    private var installerLaunched = false
+    /// Wird vor dem Neustart in die neue Version aufgerufen (z. B. um die Auswahl zu merken).
+    var onBeforeRelaunch: (() -> Void)?
+
+    static let bundleIdentifier = "de.lunaos.lumail"
+    /// Terminal-Befehl, der Lu-Mail an Ort und Stelle aktualisiert (scripts/update-mac.sh).
+    static let terminalCommand = "curl -fsSL https://github.com/Luna-OS/Lu-Mail/releases/latest/download/update-mac.sh | bash"
 
     private var workDirectory: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -117,16 +127,36 @@ final class UpdateManager {
             try? FileManager.default.removeItem(at: directory)
             let dmg = try await service.download(update, to: directory)
             downloadedDMG = dmg
-            stagedApp = try await Task.detached { try Self.extractApp(from: dmg, into: directory) }.value
+            let version = update.version.description
+            stagedApp = try await Task.detached { try Self.extractApp(from: dmg, into: directory, expectedVersion: version) }.value
             state = .ready(update)
         } catch {
             state = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
     }
 
-    /// „Jetzt neu starten“.
+    /// Kann sich diese Kopie selbst ersetzen? Nicht aus dem Disk-Image, nicht aus der App Translocation (macOS
+    /// startet heruntergeladene Apps manchmal von einem Zufallsort) und nur in einem beschreibbaren Ordner.
+    var canReplaceItself: Bool {
+        let bundle = Bundle.main.bundleURL
+        let path = bundle.path
+        // Disk-Images sind schreibgeschützt eingehängt; Apps auf anderen (beschreibbaren) Laufwerken dürfen sich aktualisieren.
+        let readOnly = (try? bundle.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly ?? false
+        guard isAppBundle, !readOnly, !path.contains("/AppTranslocation/") else { return false }
+        let manager = FileManager.default
+        return manager.isWritableFile(atPath: bundle.deletingLastPathComponent().path) && manager.isWritableFile(atPath: path)
+    }
+
+    /// „Update“ bzw. „Jetzt neu starten“.
     func installAndRelaunch() {
-        guard case .ready = state else { return }
+        guard case .ready(let update) = state else { return }
+        guard canReplaceItself else {
+            // Wie Moon Browser: aus dem Disk-Image bzw. ohne Schreibrecht die Download-Seite öffnen.
+            if let page = update.releasePage { NSWorkspace.shared.open(page) } else if let downloadedDMG { NSWorkspace.shared.open(downloadedDMG) }
+            state = .failed("Lu-Mail kann sich hier nicht selbst aktualisieren – bitte die App aus dem Disk-Image nach „Programme“ ziehen und von dort starten.")
+            return
+        }
+        onBeforeRelaunch?()
         if launchInstaller(relaunch: true) {
             NSApplication.shared.terminate(nil)
         }
@@ -134,8 +164,13 @@ final class UpdateManager {
 
     /// Wird beim Beenden aufgerufen: liegt ein Update bereit, wird es still eingespielt (ohne Neustart).
     func installOnQuitIfReady() {
-        guard case .ready = state else { return }
+        guard case .ready = state, !installerLaunched, canReplaceItself else { return }
         _ = launchInstaller(relaunch: false)
+    }
+
+    /// Fehlermeldung in der Leiste wegklicken.
+    func dismissFailure() {
+        if case .failed = state { state = .idle }
     }
 
     // MARK: Installation
@@ -153,8 +188,40 @@ final class UpdateManager {
         }
     }
 
-    /// Hängt das DMG ein, kopiert `Lu-Mail.app` nach `directory/staged/` und hängt es wieder aus.
-    private nonisolated static func extractApp(from dmg: URL, into directory: URL) throws -> URL {
+    private nonisolated static func output(_ tool: String, _ arguments: [String]) throws -> String {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw UpdateError.installFailed("\(URL(fileURLWithPath: tool).lastPathComponent) beendet mit Code \(process.terminationStatus)")
+        }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Prüft die neue App wie Moon Browser: richtige Bundle-ID, angekündigte Version, gültige Signatur.
+    private nonisolated static func verify(app: URL, expectedVersion: String) throws {
+        let plist = app.appendingPathComponent("Contents/Info.plist").path
+        let identifier = try output("/usr/bin/plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist])
+        guard identifier == bundleIdentifier else { throw UpdateError.installFailed("Das Update ist nicht Lu-Mail") }
+        let version = try output("/usr/bin/plutil", ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", plist])
+        guard version == expectedVersion else {
+            throw UpdateError.installFailed("Das Update hat Version \(version) statt \(expectedVersion)")
+        }
+        do {
+            try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
+        } catch {
+            throw UpdateError.installFailed("Die Signatur des Updates ist beschädigt")
+        }
+    }
+
+    /// Hängt das DMG ein, kopiert `Lu-Mail.app` nach `directory/staged/`, hängt es wieder aus und prüft die App.
+    private nonisolated static func extractApp(from dmg: URL, into directory: URL, expectedVersion: String) throws -> URL {
         let mountPoint = directory.appendingPathComponent("mount", isDirectory: true)
         let staging = directory.appendingPathComponent("staged", isDirectory: true)
         try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
@@ -167,6 +234,7 @@ final class UpdateManager {
         }
         let target = staging.appendingPathComponent(app.lastPathComponent)
         try run("/usr/bin/ditto", [app.path, target.path])
+        try verify(app: target, expectedVersion: expectedVersion)
         return target
     }
 
@@ -174,23 +242,33 @@ final class UpdateManager {
     /// Gibt `false` zurück, wenn ein Austausch nicht möglich ist (dann wird das DMG geöffnet).
     private func launchInstaller(relaunch: Bool) -> Bool {
         let destination = Bundle.main.bundleURL
-        guard let stagedApp, isAppBundle,
-              FileManager.default.isWritableFile(atPath: destination.deletingLastPathComponent().path) else {
+        guard let stagedApp, canReplaceItself else {
             if let downloadedDMG { NSWorkspace.shared.open(downloadedDMG) }
             state = .failed("Lu-Mail kann sich an diesem Ort nicht selbst aktualisieren. Das Disk-Image wurde geöffnet – bitte die App nach „Programme“ ziehen.")
             return false
         }
+        // Nur ein Installer zur Zeit (Sperre im Update-Ordner, veraltete Sperren nach 10 min verworfen). Die alte App
+        // wird erst gelöscht, wenn die neue vollständig kopiert ist; schlägt das Kopieren fehl, kommt sie zurück.
         let script = """
         #!/bin/bash
         PID="$1"; SRC="$2"; DST="$3"; RELAUNCH="$4"
+        LOCK="$(dirname "$0")/install.lock"
+        find "$LOCK" -maxdepth 0 -mmin +10 -exec rmdir {} \\; 2>/dev/null
+        mkdir "$LOCK" 2>/dev/null || exit 0
+        trap 'rmdir "$LOCK" 2>/dev/null' EXIT
         for _ in $(seq 1 300); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
-        rm -rf "$DST.lumail-old"
-        if mv "$DST" "$DST.lumail-old" && /usr/bin/ditto "$SRC" "$DST"; then
-          rm -rf "$DST.lumail-old"
-        else
-          rm -rf "$DST"; mv "$DST.lumail-old" "$DST"
+        [ -d "$SRC" ] || exit 0
+        OLD="$DST.lumail-old"
+        rm -rf "$OLD"
+        if mv "$DST" "$OLD"; then
+          if /usr/bin/ditto "$SRC" "$DST"; then
+            rm -rf "$OLD"
+          else
+            rm -rf "$DST"; mv "$OLD" "$DST"
+          fi
         fi
         /usr/bin/xattr -dr com.apple.quarantine "$DST" 2>/dev/null
+        /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DST" >/dev/null 2>&1
         rm -rf "$SRC"
         if [ "$RELAUNCH" = "1" ]; then /usr/bin/open "$DST"; fi
         """
@@ -206,6 +284,7 @@ final class UpdateManager {
             process.arguments = ["-c", "nohup /bin/bash \(quoted) >/dev/null 2>&1 &"]
             try process.run()
             process.waitUntilExit()
+            installerLaunched = true
             return true
         } catch {
             state = .failed("Update konnte nicht gestartet werden: \(error.localizedDescription)")

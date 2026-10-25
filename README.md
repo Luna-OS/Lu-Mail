@@ -31,8 +31,17 @@ Die fertigen Apps gibt es unter **[Releases](https://github.com/Luna-OS/Lu-Mail/
 | Windows 11 auf ARM (z. B. Snapdragon) | `Lu-Mail-X.Y.Z-Windows-arm64-Setup.exe` |
 
 **Updates kommen automatisch:** Lu-Mail prüft regelmäßig auf neue Versionen, lädt sie im Hintergrund,
-kontrolliert die SHA-256-Prüfsumme und installiert sie beim nächsten Beenden – oder sofort über
-„Jetzt neu starten“. Einstellbar unter *Einstellungen → Updates*.
+kontrolliert die SHA-256-Prüfsumme und installiert sie beim nächsten Beenden – oder sofort über den Button
+**„Update“** in der Symbolleiste (Mac) bzw. „Jetzt neu starten“. Einstellbar unter *Einstellungen → Updates*.
+
+**Mac im Terminal aktualisieren** (oder neu installieren) – nichts deinstallieren, Konten und Einstellungen bleiben:
+
+```bash
+curl -fsSL https://github.com/Luna-OS/Lu-Mail/releases/latest/download/update-mac.sh | bash
+```
+
+Das Skript ([scripts/update-mac.sh](scripts/update-mac.sh)) prüft Prüfsumme, Bundle-ID, Version und Signatur,
+beendet Lu-Mail, ersetzt die App und öffnet sie wieder.
 
 > **Erster Start:** Die Apps sind (noch) nicht mit einem kostenpflichtigen Apple-/Microsoft-Zertifikat signiert.
 > - **macOS:** Beim ersten Öffnen *Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“* wählen.

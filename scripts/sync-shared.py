@@ -24,6 +24,7 @@ FILES = {
     "phishingJSON": "shared/phishing.json",
     "customServersHTML": "shared/login/custom-servers.html",
     "webmailJS": "shared/webmail/lu-webmail.js",
+    "webmailCaptureJS": "shared/webmail/lu-capture.js",
 }
 
 

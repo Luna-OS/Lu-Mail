@@ -81,6 +81,12 @@ private struct AppearanceSettings: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Section("Hintergrund") {
+                Toggle("Animierter Nachthimmel mit Mond", isOn: Binding(get: { theme.nightSky }, set: { theme.set(nightSky: $0) }))
+                Text("Im dunklen Modus hinter Seitenleiste und Liste; steht still, wenn „Bewegung reduzieren“ aktiv ist.")
+                    .font(.caption)
+                    .foregroundStyle(LuTheme.textSecondary)
+            }
             Section("Variante") {
                 ForEach(ThemeTokens.variantOrder, id: \.self) { key in
                     if let variant = tokens.variants[key] {

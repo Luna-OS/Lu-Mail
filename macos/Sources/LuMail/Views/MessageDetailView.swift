@@ -39,10 +39,19 @@ struct MessageDetailView: View {
                 } description: {
                     Text("Wähle links eine Nachricht aus. Tipp: j/k blättern, e archiviert, r antwortet.")
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background {
+                    // Ohne geöffnete Nachricht zeigt der Lesebereich den Nachthimmel mit Mond.
+                    ZStack {
+                        NightSkyLayer()
+                        LuTheme.emptyPane
+                    }
+                    .ignoresSafeArea()
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LuTheme.surface)
+        .background(model.selectedMessageIDs.isEmpty ? Color.clear : LuTheme.surface)
     }
 }
 

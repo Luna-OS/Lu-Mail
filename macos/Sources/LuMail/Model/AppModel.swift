@@ -22,6 +22,38 @@ enum SidebarItem: Hashable {
         default: return nil
         }
     }
+
+    /// Text-Form zum Merken über einen Neustart (Update) hinweg.
+    var storageKey: String {
+        switch self {
+        case .allInboxes: return "all"
+        case .unread: return "unread"
+        case .flagged: return "flagged"
+        case .reminders: return "reminders"
+        case .scheduled: return "scheduled"
+        case .providerInbox(let id): return "provider\u{1F}\(id)"
+        case .category(let id, let category): return "category\u{1F}\(id.uuidString)\u{1F}\(category.rawValue)"
+        case .folder(let id, let path): return "folder\u{1F}\(id.uuidString)\u{1F}\(path)"
+        case .web(let id, let key): return "web\u{1F}\(id.uuidString)\u{1F}\(key)"
+        }
+    }
+
+    init?(storageKey: String) {
+        let parts = storageKey.components(separatedBy: "\u{1F}")
+        let account = parts.count > 1 ? UUID(uuidString: parts[1]) : nil
+        switch (parts[0], parts.count) {
+        case ("all", 1): self = .allInboxes
+        case ("unread", 1): self = .unread
+        case ("flagged", 1): self = .flagged
+        case ("reminders", 1): self = .reminders
+        case ("scheduled", 1): self = .scheduled
+        case ("provider", 2): self = .providerInbox(parts[1])
+        case ("category", 3): guard let account else { return nil }; self = .category(account, MailCategory(rawValue: parts[2]))
+        case ("folder", 3): guard let account else { return nil }; self = .folder(account, parts[2])
+        case ("web", 3): guard let account else { return nil }; self = .web(account, parts[2])
+        default: return nil
+        }
+    }
 }
 
 /// Ein Fehler mit fertiger Meldung für die Oberfläche.
@@ -157,6 +189,8 @@ final class AppModel {
             self?.selection = .web(accountId, "primary")
         }
         setUpWebMail()
+        restoreSelectionAfterUpdate()
+        UpdateManager.shared.onBeforeRelaunch = { [weak self] in self?.saveSelectionForUpdate() }
         startAutoRefresh()
         startTicker()
         updatePush()
@@ -192,6 +226,19 @@ final class AppModel {
             let list = group.accounts.filter { !$0.isWeb }
             return list.isEmpty ? nil : (group.provider, list)
         }
+    }
+
+    // MARK: Auswahl über ein Update hinweg (§23)
+
+    private func saveSelectionForUpdate() {
+        AppModel.defaults.set(selection?.storageKey, forKey: "selectionAfterUpdate")
+    }
+
+    private func restoreSelectionAfterUpdate() {
+        guard let key = AppModel.defaults.string(forKey: "selectionAfterUpdate") else { return }
+        AppModel.defaults.removeObject(forKey: "selectionAfterUpdate")
+        guard let item = SidebarItem(storageKey: key), item.accountId.map({ account(id: $0) != nil }) ?? true else { return }
+        selection = item
     }
 
     // MARK: Web-Konten (§20)

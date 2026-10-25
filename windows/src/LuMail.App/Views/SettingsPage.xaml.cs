@@ -64,6 +64,7 @@ public sealed partial class SettingsPage : Page
         foreach (var a in _s.Theme.Accents) AccentBox.Items.Add(ColorItem(a.Name, a.Dark, a.Id));
         AccentBox.SelectedIndex = Math.Max(0, _s.Theme.Accents.ToList().FindIndex(a => a.Id == settings.Accent) + 1);
         VariantDescription.Text = _s.Theme.Variant(settings.ThemeVariant).Description;
+        NightSkySwitch.IsOn = settings.NightSky;
 
         // Datenschutz
         LockSwitch.IsOn = settings.AppLock;
@@ -366,6 +367,15 @@ public sealed partial class SettingsPage : Page
         _s.SaveSettings();
         VariantDescription.Text = _s.Theme.Variant(_s.Settings.ThemeVariant).Description;
         ThemeService.ApplyPalette(_s.Theme, _s.Settings);
+        AppearanceChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Animierter Nachthimmel (§22) – wirkt sofort.</summary>
+    private void OnNightSkyToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _s.Settings.NightSky = NightSkySwitch.IsOn;
+        _s.SaveSettings();
         AppearanceChanged?.Invoke(this, EventArgs.Empty);
     }
 

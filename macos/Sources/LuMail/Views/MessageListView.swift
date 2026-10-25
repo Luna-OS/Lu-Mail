@@ -20,7 +20,13 @@ struct MessageListView: View {
                 messageList
             }
         }
-        .background(LuTheme.background)
+        .background {
+            ZStack {
+                NightSkyLayer()
+                LuTheme.listPane
+            }
+            .ignoresSafeArea()
+        }
         .navigationTitle(model.title)
         .modifier(SearchFocusModifier(focused: $searchFocused))
     }
