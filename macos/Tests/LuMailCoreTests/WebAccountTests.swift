@@ -100,6 +100,7 @@ final class WebReaderTests: XCTestCase {
         XCTAssertEqual(catalog.provider(id: "mailru")?.web?.reader, "mailru")
         XCTAssertNil(catalog.provider(id: "outlook")?.web?.reader)
         XCTAssertTrue(SharedResources.webmailJS.contains("window.LuWebmail"))
+        XCTAssertTrue(SharedResources.webmailCaptureJS.contains("data-lu-capture"))
     }
 
     func testDecodeList() throws {

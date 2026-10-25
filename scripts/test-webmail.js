@@ -8,6 +8,7 @@ const assert = require("assert");
 const { chromium } = require("playwright");
 
 const script = fs.readFileSync(path.join(__dirname, "..", "shared", "webmail", "lu-webmail.js"), "utf8");
+const capture = fs.readFileSync(path.join(__dirname, "..", "shared", "webmail", "lu-capture.js"), "utf8");
 
 const pages = {
   gmail: `
@@ -73,10 +74,70 @@ const pages = {
   assert.deepStrictEqual([r.items[0].id, r.items[0].from, r.items[0].fromEmail, r.items[0].subject, r.items[0].unread],
                          ["p1", "Bob", "bob@proton.me", "Treffen", true]);
 
+  // Proton ohne Mitschnitt: Notlösung über die Textzeilen der Einträge (verschachtelte IDs zählen einmal).
+  r = await call(`<div data-testid="message-list"><div data-element-id="c9" class="item-container read"><div data-element-id="c9">
+      <span>Carla</span><br><span>Rechnung Oktober</span><br><span>10:15</span></div></div></div>`, 'LuWebmail.list("proton")');
+  assert.strictEqual(r.items.length, 1);
+  assert.deepStrictEqual([r.items[0].from, r.items[0].subject, r.items[0].unread], ["Carla", "Rechnung Oktober", false]);
+
+  // Proton mit Mitschnitt der API-Antworten (lu-capture.js im Seitenkontext ab Dokumentbeginn).
+  const time = Math.floor(Date.now() / 1000) - 60;
+  await page.route("https://mail.proton.me/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/api/mail/v4/conversations?")) {
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ Code: 1000, Conversations: [
+        { ID: "conv1", Subject: "Willkommen", Senders: [{ Name: "Proton", Address: "no-reply@proton.me" }], Time: time,
+          ContextTime: time, NumUnread: 1, ContextNumUnread: 1, NumAttachments: 0, ContextNumAttachments: 1 },
+        { ID: "conv2", Subject: "Alt", Senders: [{ Name: "", Address: "x@y.de" }], Time: 1600000000, ContextNumUnread: 0 },
+      ] }) });
+    }
+    if (url.includes("/api/mail/v4/conversations/conv1")) {
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ Code: 1000,
+        Conversation: { ID: "conv1", Subject: "Willkommen" },
+        Messages: [{ ID: "m1", ConversationID: "conv1", Subject: "Willkommen", Sender: { Name: "Proton", Address: "no-reply@proton.me" },
+                     ToList: [{ Name: "Alex", Address: "alex@proton.me" }], Time: time, Body: "-----BEGIN PGP MESSAGE-----" }] }) });
+    }
+    return route.fulfill({ contentType: "text/html", body: `<html><head><script>${capture}</script></head><body>
+      <div data-testid="message-list">
+        <div data-element-id="conv1" class="item-container unread"><span>Proton</span></div>
+        <div data-element-id="conv2" class="item-container read"><span>x@y.de</span></div>
+      </div>
+      <iframe srcdoc="<p>Hallo <b>Alex</b></p><script>bad()</script>"></iframe>
+      <script>
+        fetch("/api/mail/v4/conversations?Page=0&LabelID=0").then(r => r.json());
+        var x = new XMLHttpRequest(); x.open("GET", "/api/mail/v4/conversations/conv1"); x.send();
+      </script></body></html>` });
+  });
+  await page.goto("https://mail.proton.me/u/0/inbox/conv1");
+  await page.waitForFunction(() => {
+    const c = document.documentElement.getAttribute("data-lu-capture");
+    return c && c.includes("conv2") && c.includes("m1");
+  });
+  await page.addScriptTag({ content: script });
+  r = JSON.parse(await page.evaluate('LuWebmail.list("proton")'));
+  assert.strictEqual(r.state, "ok");
+  assert.deepStrictEqual(
+    [r.items[0].id, r.items[0].from, r.items[0].fromEmail, r.items[0].subject, r.items[0].unread, r.items[0].attachment],
+    ["conv1", "Proton", "no-reply@proton.me", "Willkommen", true, true]);
+  assert.ok(/^\d{2}:\d{2}$/.test(r.items[0].date), r.items[0].date);
+  assert.deepStrictEqual([r.items[1].from, r.items[1].unread, r.items[1].date.includes("2020")], ["x@y.de", false, true]);
+  assert.ok(!JSON.stringify(r).includes("PGP"));
+  r = JSON.parse(await page.evaluate('LuWebmail.message("proton")'));
+  assert.strictEqual(r.state, "ok");
+  assert.strictEqual(r.subject, "Willkommen");
+  assert.deepStrictEqual([r.parts[0].from, r.parts[0].fromEmail, r.parts[0].to], ["Proton", "no-reply@proton.me", "Alex"]);
+  assert.ok(r.parts[0].html.includes("<b>Alex</b>") && !r.parts[0].html.includes("<script"));
+  await page.unroute("https://mail.proton.me/**");
+
   r = await call(pages.mailru, 'LuWebmail.list("mailru")');
   assert.strictEqual(r.state, "ok");
   assert.deepStrictEqual([r.items[0].id, r.items[0].fromEmail, r.items[0].subject, r.items[0].snippet, r.items[0].unread],
                          ["/inbox/0:1234:0/", "ivan@mail.ru", "Привет", "Как дела?", true]);
+
+  // Qualitätsprüfung: Einträge ohne Absender und Betreff → "error"/"unreadable" (statt „(unbekannt)“-Liste).
+  r = await call(`<div data-testid="message-list"><div data-element-id="a"></div><div data-element-id="b"></div></div>`,
+                 'LuWebmail.list("proton")');
+  assert.deepStrictEqual([r.state, r.reason], ["error", "unreadable"]);
 
   r = await call(pages.login, 'LuWebmail.list("gmail")');
   assert.strictEqual(r.state, "login");

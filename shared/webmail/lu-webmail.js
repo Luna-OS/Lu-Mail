@@ -4,8 +4,9 @@
 // Nachrichtenliste und geöffnete Nachricht aus dem Webmail des Anbieters, damit Lu-Mail sie in der eigenen
 // Oberfläche zeigen kann. Jeder Aufruf liefert einen JSON-String:
 //
-//   LuWebmail.list("gmail")        → {"state":"ok"|"loading"|"login", "items":[{id, from, fromEmail, subject, snippet,
-//                                      date, dateTitle, unread, attachment}]}
+//   LuWebmail.list("gmail")        → {"state":"ok"|"loading"|"login"|"error", "items":[{id, from, fromEmail, subject,
+//                                      snippet, date, dateTitle, unread, attachment}]}
+//                                      ("error" mit reason "unreadable": die Seite hat sich geändert)
 //   LuWebmail.open("gmail", id)    → {"state":"ok"|"missing"}   (öffnet die Nachricht im Webmail)
 //   LuWebmail.message("gmail")     → {"state":"ok"|"loading", "subject", "parts":[{from, fromEmail, to, date, html}]}
 //
@@ -116,6 +117,61 @@
     return JSON.stringify(object);
   }
 
+  // Zeilen des sichtbaren Textes – Notlösung, wenn die Selektoren für Absender/Betreff nichts finden.
+  function lines(el) {
+    return String((el && el.innerText) || "").split(/\n+/).map(function (l) { return l.trim(); }).filter(function (l) {
+      return l.length > 0 && !/^(\d{1,2}[:.]\d{2}|\d{1,2}\.\s?\w+\.?|\d+)$/.test(l);
+    });
+  }
+
+  function fillFromLines(item, row) {
+    if (item.from && item.subject) return item;
+    var parts = lines(row);
+    if (!item.from && parts.length) item.from = parts[0];
+    if (!item.subject && parts.length > 1) item.subject = parts[1];
+    if (!item.snippet && parts.length > 2) item.snippet = parts[2];
+    return item;
+  }
+
+  // Elemente mit gleichem Attribut können verschachtelt sein – nur das äußerste zählt.
+  function outermost(elements, name) {
+    var seen = {};
+    return elements.filter(function (el) {
+      var id = attr(el, name);
+      if (!id || seen[id]) return false;
+      for (var p = el.parentElement; p; p = p.parentElement) {
+        if (attr(p, name) === id) return false;
+      }
+      seen[id] = true;
+      return true;
+    });
+  }
+
+  // Mitschnitt aus lu-capture.js (Metadaten der Webmail-API).
+  function captured() {
+    try {
+      return JSON.parse(document.documentElement.getAttribute("data-lu-capture") || "{}");
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function shortDate(seconds) {
+    if (!seconds) return "";
+    var date = new Date(seconds * 1000);
+    var now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    }
+    var options = { day: "numeric", month: "short" };
+    if (date.getFullYear() !== now.getFullYear()) options.year = "numeric";
+    return date.toLocaleDateString("de-DE", options);
+  }
+
+  function longDate(seconds) {
+    return seconds ? new Date(seconds * 1000).toLocaleString("de-DE", { dateStyle: "full", timeStyle: "short" }) : "";
+  }
+
   // MARK: Anbieter
 
   var adapters = {};
@@ -157,7 +213,7 @@
           unread: row.classList.contains("zE") || isBold(marker) || isBold(sender),
           attachment: !!q(row, '[data-tooltip*="ttach"], img[src*="attachment"], .brd, .aKS'),
         };
-      }).filter(function (item) { return item.id; });
+      }).map(function (item, index) { return fillFromLines(item, rows[index]); }).filter(function (item) { return item.id; });
       return { state: "ok", items: items };
     },
     open: function (id) {
@@ -193,35 +249,62 @@
     },
   };
 
-  // Proton Mail: Listeneinträge mit data-element-id; der Inhalt steht in einem iframe.
+  // Proton Mail: Listeneinträge mit data-element-id (= Unterhaltungs- bzw. Nachrichten-ID der Proton-API).
+  // Absender, Betreff, Datum und „ungelesen“ kommen aus dem Mitschnitt der API-Antworten (lu-capture.js),
+  // nur wenn der fehlt, aus dem Seitenaufbau. Der Inhalt steht in einem iframe.
   adapters.proton = {
     rows: function () {
-      var list = first(document, ['[data-testid="message-list"]', '[data-shortcut-target="item-container-wrapper"]', "main", "body"]);
-      return qa(list, "[data-element-id]").filter(visible);
+      return outermost(qa(document, "[data-element-id]"), "data-element-id").filter(visible);
+    },
+    fromCapture: function (id, meta) {
+      var senders = meta.Senders || (meta.Sender ? [meta.Sender] : []);
+      var names = senders.map(function (p) { return p && (p.Name || p.Address); }).filter(Boolean);
+      var time = meta.ContextTime || meta.Time;
+      var unread = meta.ContextNumUnread !== undefined ? meta.ContextNumUnread
+        : (meta.NumUnread !== undefined ? meta.NumUnread : meta.Unread);
+      var attachments = meta.ContextNumAttachments !== undefined ? meta.ContextNumAttachments : meta.NumAttachments;
+      return {
+        id: id,
+        from: names.slice(0, 3).join(", "),
+        fromEmail: (senders[0] && senders[0].Address) || "",
+        subject: meta.Subject || "",
+        snippet: "",
+        date: shortDate(time),
+        dateTitle: longDate(time),
+        unread: Number(unread) > 0,
+        attachment: Number(attachments) > 0,
+      };
+    },
+    fromPage: function (id, row) {
+      var sender = first(row, ['[data-testid*="sender"]', ".item-senders", '[class*="sender"]']);
+      var subject = first(row, ['[data-testid*="subject"]', ".item-subject", '[class*="subject"]']);
+      var date = first(row, ["time", '[data-testid*="date"]', ".item-date"]);
+      var emailHolder = first(row, ['[title*="@"]']);
+      return fillFromLines({
+        id: id,
+        from: text(sender),
+        fromEmail: emailIn(attr(emailHolder, "title")) || emailIn(attr(sender, "title")),
+        subject: text(subject) || attr(subject, "title"),
+        snippet: "",
+        date: text(date),
+        dateTitle: attr(date, "datetime") || attr(date, "title"),
+        unread: row.classList.contains("unread") || attr(row, "data-unread") === "true",
+        attachment: !!q(row, '[data-testid*="attachment"]'),
+      }, row);
     },
     list: function () {
       if (hasPasswordField()) return { state: "login" };
       var rows = this.rows();
-      if (!rows.length && !q(document, '[data-testid="message-list"], [data-testid="empty-view-placeholder--empty-title"], .items-column-list')) {
+      if (!rows.length && !q(document, '[data-testid="message-list"], [data-testid*="empty-view"], .items-column-list')) {
         return { state: "loading" };
       }
+      var capture = captured();
+      var self = this;
       var items = rows.map(function (row) {
-        var sender = first(row, ['[data-testid*="sender-address"]', '[data-testid*="senders"]', ".item-senders", '[class*="sender"]']);
-        var subject = first(row, ['[data-testid*="subject"]', ".item-subject", '[class*="subject"]']);
-        var date = first(row, ["time", '[data-testid*="date"]', ".item-date"]);
-        var emailHolder = first(row, ['[title*="@"]', '[data-testid*="sender"] [title]']);
-        return {
-          id: attr(row, "data-element-id"),
-          from: text(sender),
-          fromEmail: emailIn(attr(emailHolder, "title")) || emailIn(attr(sender, "title")),
-          subject: text(subject) || attr(subject, "title"),
-          snippet: "",
-          date: text(date),
-          dateTitle: attr(date, "datetime") || attr(date, "title"),
-          unread: /\bunread\b/.test(row.className) || attr(row, "data-unread") === "true" || isBold(subject),
-          attachment: !!q(row, '[data-testid*="attachment"], [class*="attachment"]'),
-        };
-      }).filter(function (item) { return item.id; });
+        var id = attr(row, "data-element-id");
+        var meta = (capture.conversations || {})[id] || (capture.messages || {})[id];
+        return meta ? self.fromCapture(id, meta) : self.fromPage(id, row);
+      });
       return { state: "ok", items: items };
     },
     open: function (id) {
@@ -232,28 +315,37 @@
       return false;
     },
     message: function () {
-      var view = first(document, ['[data-testid="conversation-view"]', '[data-testid="message-view"]', "article", "main"]);
-      if (!view) return { state: "loading" };
-      var subject = first(document, ['[data-testid="conversation-header:subject"]', '[data-testid*="subject"] h1', "h1"]);
-      var messages = qa(document, '[data-testid^="message-view"], article[data-shortcut-target="message-container"], article');
-      if (!messages.length) messages = [view];
-      var parts = messages.map(function (message) {
-        var frame = q(message, 'iframe[data-testid="content-iframe"], iframe');
-        var html = frame ? frameHTML(frame) : cleanHTML(first(message, ['[data-testid="message-content"]', ".message-content"]));
-        if (!html) return null;
-        var sender = first(message, ['[data-testid*="recipient-label"]', '[data-testid*="sender"]', '[class*="sender"]']);
-        var emailHolder = first(message, ['[data-testid*="recipient-address"]', '[title*="@"]']);
-        var date = first(message, ["time", '[data-testid*="date"]']);
+      // Inhalt: alle (gleich-originigen) iframes mit Text – bei Unterhaltungen eins pro aufgeklappter Nachricht.
+      var bodies = qa(document, "iframe").map(frameHTML).filter(function (html) {
+        return html && html.replace(/<[^>]*>/g, "").trim().length > 0;
+      });
+      if (!bodies.length) return { state: "loading" };
+      // Absender/Datum aus dem Mitschnitt: Unterhaltungs-ID steht am Ende der Adresse (…/inbox/<ID>).
+      var capture = captured();
+      var id = decodeURIComponent((location.pathname.split("/").filter(Boolean).pop() || ""));
+      var conversation = (capture.conversations || {})[id];
+      var messages = [];
+      var all = capture.messages || {};
+      Object.keys(all).forEach(function (key) {
+        var m = all[key];
+        if (m && (m.ConversationID === id || m.ID === id)) messages.push(m);
+      });
+      messages.sort(function (a, b) { return (a.Time || 0) - (b.Time || 0); });
+      var offset = messages.length - bodies.length;
+      var parts = bodies.map(function (html, index) {
+        var meta = messages[offset + index];
+        var sender = meta && meta.Sender;
         return {
-          from: text(sender),
-          fromEmail: emailIn(text(emailHolder)) || emailIn(attr(emailHolder, "title")),
-          to: "",
-          date: attr(date, "title") || text(date),
+          from: (sender && (sender.Name || sender.Address)) || "",
+          fromEmail: (sender && sender.Address) || "",
+          to: meta && meta.ToList ? meta.ToList.map(function (p) { return p && (p.Name || p.Address); }).filter(Boolean).join(", ") : "",
+          date: meta ? longDate(meta.Time) : "",
           html: html,
         };
-      }).filter(Boolean);
-      if (!parts.length) return { state: "loading" };
-      return { state: "ok", subject: text(subject), parts: parts };
+      });
+      var subject = (conversation && conversation.Subject) || (messages.length && messages[messages.length - 1].Subject)
+        || text(first(document, ['[data-testid="conversation-header:subject"]', "h1"]));
+      return { state: "ok", subject: subject || "", parts: parts };
     },
   };
 
@@ -288,7 +380,7 @@
           unread: /llc_(new|unread)/.test(row.className) || !!q(row, ".ll-rs_is-active, [class*='unread']") || isBold(subject),
           attachment: !!q(row, '[class*="attach"]'),
         };
-      }).filter(function (item) { return item.id; });
+      }).map(function (item, index) { return fillFromLines(item, rows[index]); }).filter(function (item) { return item.id; });
       return { state: "ok", items: items };
     },
     open: function (id) {
@@ -318,6 +410,16 @@
     },
   };
 
+  // Liste plausibel? Hat mindestens die Hälfte der Einträge weder Absender noch Betreff, hat sich die Seite
+  // geändert – dann lieber die Webseite zeigen als eine Liste voller „(unbekannt)“.
+  function checked(list) {
+    if (list && list.state === "ok" && list.items && list.items.length) {
+      var empty = list.items.filter(function (item) { return !item.from && !item.fromEmail && !item.subject; }).length;
+      if (empty * 2 >= list.items.length) return { state: "error", reason: "unreadable", items: [] };
+    }
+    return list;
+  }
+
   function run(name, action) {
     var adapter = adapters[name];
     if (!adapter) return result({ state: "unsupported" });
@@ -330,7 +432,7 @@
 
   window.LuWebmail = {
     version: 1,
-    list: function (name) { return run(name, function (a) { return a.list(); }); },
+    list: function (name) { return run(name, function (a) { return checked(a.list()); }); },
     open: function (name, id) { return run(name, function (a) { return { state: a.open(id) ? "ok" : "missing" }; }); },
     message: function (name) { return run(name, function (a) { return a.message(); }); },
   };

@@ -269,4 +269,53 @@ in einer eigenen Content-World aus (`WKContentWorld.defaultClient`), Windows per
    der genau diese Nachricht schon offen ist. „Neue E-Mail“ öffnet die Webseite (Verfassen).
 - Umschalter in der Leiste oben: **Lu-Ansicht / Webseite** (pro Konto gemerkt; Standard Lu-Ansicht).
 - Aufrufe pro Konto laufen nacheinander (eine Warteschlange), damit Liste und Nachricht sich nicht stören.
+- **Mitschnitt** (`shared/webmail/lu-capture.js`): läuft im Seitenkontext ab Dokumentbeginn (macOS: `WKUserScript`
+  in der Page-World, Windows: `AddScriptToExecuteOnDocumentCreatedAsync`) und merkt sich die Metadaten aus den
+  Listen-Antworten der Webmail-API (Proton: `/api/mail/v4/conversations|messages` – Absender, Betreff, Datum,
+  ungelesen, Anhänge; verschlüsselte Inhalte werden verworfen) im Attribut `data-lu-capture` von `<html>`. Der Leser
+  nimmt diese Daten vor dem Seitenaufbau; fehlen sie, liest er Absender/Betreff aus dem Seitenaufbau bzw. notfalls aus
+  den Textzeilen eines Eintrags.
+- **Qualitätsprüfung:** Hat mindestens die Hälfte der gelesenen Einträge weder Absender noch Betreff, meldet der
+  Leser `state: "error"` (`reason: "unreadable"`) – Lu-Mail zeigt dann die Webseite statt einer Liste voller
+  „(unbekannt)“.
 - Tests: `node scripts/test-webmail.js` (nachgebaute Seiten in Chromium; die CI prüft die Syntax mit `node --check`).
+
+## 22. Nachthimmel-Hintergrund
+
+Ein animierter Nachthimmel mit Mond liegt hinter der Oberfläche (Einstellung *Darstellung → Animierter
+Nachthimmel*, Standard an).
+
+- **Himmel:** senkrechter Verlauf `#070A1C` (oben) → `#141638` → `#24205A` (unten), darüber ein schwacher violetter
+  Schleier (Akzentfarbe, 8 %) unten links.
+- **Sterne:** 160 Stück an festen Zufallspositionen (gleicher Startwert bei jedem Start), 0,8–2,4 px, weiß bis leicht
+  bläulich/gelblich; jeder funkelt (Deckkraft 0,25 ↔ 1, eigene Periode 2–6 s, versetzt). Die Sternenebene driftet
+  sehr langsam waagerecht (±12 px in 90 s, hin und zurück).
+- **Mond:** oben rechts (82 % Breite, 16 % Höhe), Radius 38 px, Farbe `moon` des Themes aufgehellt
+  (`#FFF4D6` → `#F5D06F`), drei dezente Krater, weicher Schein (Radius 3×, Deckkraft 0,35 → 0), der Schein
+  „atmet“ (0,25 ↔ 0,4 in 6 s) und der Mond schwebt ±3 px in 8 s.
+- **Sternschnuppe:** alle 9–18 s (zufällig) eine kurze helle Linie mit Schweif, die in 0,9 s schräg nach unten links
+  zieht und ausblendet.
+- **Lesbarkeit:** Im dunklen Modus sind Seitenleiste und Nachrichtenliste durchscheinend (Hintergrund 72 % deckend),
+  der Lesebereich bleibt voll deckend. Im hellen Modus bleiben alle Flächen deckend; der Himmel ist dann nur auf
+  dem Willkommens- und dem Sperrbildschirm zu sehen.
+- **Leistung:** höchstens 30 Bilder/s, angehalten wenn das Fenster nicht sichtbar ist; bei *Bewegung reduzieren*
+  (macOS) bzw. ausgeschalteten Animationen (Windows) steht der Himmel still.
+
+## 23. Updates auf dem Mac (wie Moon Browser)
+
+Die Mac-Version ist nicht mit einer Apple-Developer-ID signiert, deshalb aktualisiert sich Lu-Mail selbst:
+1. Alle `checkIntervalHours` (shared/update.json) neueste Version auf GitHub prüfen; im Modus *Automatisch* im
+   Hintergrund laden: DMG + SHA-256 aus `SHA256SUMS.txt` prüfen, App ins Cache-Verzeichnis kopieren und dort prüfen:
+   Bundle-ID `de.lunaos.lumail`, Version = angekündigte Version, `codesign --verify --deep --strict`.
+2. Liegt sie bereit, erscheint in der Symbolleiste ein Button **„Update“** (Akzentfarbe) und oben die Leiste
+   „Lu-Mail X ist bereit“. Klick → Lu-Mail merkt sich die aktuelle Auswahl (Ordner/Konto), beendet sich, ein kleines
+   Skript tauscht die App aus (alte App erst danach löschen, bei Fehler zurück) und öffnet die neue Version, die die
+   Auswahl wiederherstellt. Ohne Klick wird beim Beenden installiert.
+3. Kann sich die App nicht selbst ersetzen (gestartet aus dem Disk-Image, App Translocation oder Ordner ohne
+   Schreibrecht), öffnet „Update“ die Download-Seite des Releases und erklärt kurz, die App nach *Programme* zu ziehen.
+4. **Terminal:** Jedes Release enthält `update-mac.sh` (aus `scripts/update-mac.sh`):
+   `curl -fsSL https://github.com/Luna-OS/Lu-Mail/releases/latest/download/update-mac.sh | bash`
+   – findet Lu-Mail (`/Applications`, `~/Applications`, Spotlight per Bundle-ID), lädt das neueste DMG, prüft
+   SHA-256, Bundle-ID, Version und Signatur, beendet Lu-Mail, tauscht die App aus (bei fehlendem Schreibrecht mit
+   `sudo`), entfernt das Quarantäne-Attribut und öffnet sie wieder. Konten, Einstellungen und Schlüsselbund bleiben
+   (sie liegen in der Library, nicht in der App).

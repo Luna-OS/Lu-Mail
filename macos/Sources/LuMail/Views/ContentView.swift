@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var theme = ThemeSettings.shared
     @State private var lock = AppLock.shared
+    @State private var windowSize: CGSize = .zero
 
     var body: some View {
         @Bindable var model = model
@@ -25,11 +26,20 @@ struct ContentView: View {
         }
         .id(theme.revision)
         .background(LuTheme.background)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { windowSize = proxy.size }
+                    .onChange(of: proxy.size) { _, size in windowSize = size }
+            }
+        }
+        .environment(\.skyCanvasSize, windowSize)
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Suchen (Enter: auch auf dem Server)")
         .onSubmit(of: .search) { Task { await model.searchOnServer() } }
         .onChange(of: model.searchText) { _, newValue in if newValue.isEmpty { model.serverResults = [] } }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                UpdateToolbarButton()
                 Button {
                     Task { await model.refreshAll() }
                 } label: {
@@ -179,6 +189,12 @@ struct WelcomeView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LuTheme.background)
+        .background {
+            ZStack {
+                LuTheme.background
+                NightSkyLayer(alwaysVisible: true)
+            }
+            .ignoresSafeArea()
+        }
     }
 }
