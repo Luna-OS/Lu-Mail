@@ -314,17 +314,38 @@ final class AppModel {
         }
     }
 
+    /// Laufende „Jetzt umstellen“-Anmeldungen je Web-Konto – höchstens eine pro Konto, abbrechbar.
+    private(set) var imapSwitches: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
+
     /// Web-Konto auf IMAP umstellen (Anbieter, bei denen das normale Passwort genügt, z. B. Hostinger – §20).
-    func switchToIMAP(_ account: Account) async {
+    /// Ein zweiter Klick während der Anmeldung startet keine zweite.
+    func startSwitchToIMAP(_ account: Account) {
+        guard imapSwitches[account.id] == nil else { return }
+        let token = UUID()
+        let task = Task { [weak self] in
+            await self?.switchToIMAP(account)
+            if self?.imapSwitches[account.id]?.token == token { self?.imapSwitches[account.id] = nil }
+        }
+        imapSwitches[account.id] = (token, task)
+    }
+
+    func cancelSwitchToIMAP(_ accountId: UUID) {
+        imapSwitches.removeValue(forKey: accountId)?.task.cancel()
+    }
+
+    private func switchToIMAP(_ account: Account) async {
         guard account.isWeb, let provider = provider(for: account) else { return }
         do {
             try await addAccount(provider: provider, emailHint: account.email.isEmpty ? nil : account.email)
             // Gleiche Adresse: addAccount hat das Web-Konto samt Webseiten-Daten schon ersetzt. Andere Adresse: hier.
             if accounts.contains(where: { $0.id == account.id }) { removeAccount(account) }
+            NSApplication.shared.activate(ignoringOtherApps: true)
             banner = "\(provider.name) läuft jetzt direkt in Lu-Mail."
         } catch is CancellationError {
             return
         } catch {
+            if Task.isCancelled { return }
+            NSApplication.shared.activate(ignoringOtherApps: true)
             banner = AuthService.friendlyLoginError(error, provider: provider)
         }
     }
@@ -358,10 +379,11 @@ final class AppModel {
     func addAccount(provider: Provider, emailHint: String?, serversHint: CustomServers? = nil) async throws {
         let hint = emailHint?.trimmingCharacters(in: .whitespaces)
         var account = try await auth.signIn(provider: provider, emailHint: hint?.isEmpty == true ? nil : hint, serversHint: serversHint)
-        if let existing = accounts.first(where: { $0.email.caseInsensitiveCompare(account.email) == .orderedSame && $0.providerId == account.providerId }) {
-            // Erneute Anmeldung: altes Konto ersetzen (z. B. abgelaufenes Token), Signatur behalten.
-            // Ein Web-Konto, das jetzt per IMAP angemeldet wird, ganz entfernen (Webseiten-Daten, Cookies).
-            account.signature = existing.signature
+        let matches = accounts.filter { $0.email.caseInsensitiveCompare(account.email) == .orderedSame && $0.providerId == account.providerId }
+        // Erneute Anmeldung: alte Konten mit dieser Adresse ersetzen (z. B. abgelaufenes Token), Signatur behalten.
+        // Web-Konten mit derselben Adresse ganz entfernen (Webseiten-Daten, Cookies) – kein doppelter Eintrag (§20).
+        if let keep = (matches.first(where: { !$0.isWeb }) ?? matches.first) { account.signature = keep.signature }
+        for existing in matches {
             removeAccount(existing, forgetSecrets: existing.isWeb && !account.isWeb && existing.id != account.id)
         }
         accounts.append(account)

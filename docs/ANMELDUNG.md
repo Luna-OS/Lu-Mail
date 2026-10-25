@@ -3,8 +3,10 @@
 ## Der einfache Weg: Web-Konto (empfohlen)
 
 **Konto hinzufügen → Anbieter wählen → „Bei <Anbieter> anmelden“.** Lu-Mail öffnet die **echte Anmeldeseite**
-des Anbieters (Gmail, Outlook, Proton Mail, Mail.ru, Yandex, iCloud, GMX, WEB.DE, Hostinger) in einem eigenen
+des Anbieters (Gmail, Outlook, Proton Mail, Mail.ru, Yandex, iCloud, GMX, WEB.DE) in einem eigenen
 Fenster. Du meldest dich dort ganz normal mit deinem Passwort an – auch mit Zwei-Faktor oder Bestätigungscode.
+**Ausnahme Hostinger:** Dort genügt für IMAP das normale Postfach-Passwort, deshalb verbindet Lu-Mail Hostinger
+direkt per IMAP (siehe [Hostinger](#hostinger)).
 
 - **Kein App-Passwort, keine Proton Bridge, keine OAuth-Einrichtung nötig.**
 - Lu-Mail speichert dein Passwort nicht; nur die Anmelde-Cookies des Anbieters liegen in einem eigenen Speicher
@@ -15,8 +17,9 @@ Fenster. Du meldest dich dort ganz normal mit deinem Passwort an – auch mit Zw
 
 ## Erweitert: per IMAP verbinden
 
-Im Assistenten unter **„Erweitert: per IMAP verbinden“**. Dann laufen Mails über IMAP direkt in Lu-Mails eigener
-Liste (Alle Posteingänge, Regeln, Suche …). Die Anmeldung läuft dabei über deinen **Standardbrowser**:
+Im Assistenten unter **„Erweitert: per IMAP verbinden“** (bei Hostinger der Standardweg). Dann laufen Mails
+über IMAP direkt in Lu-Mails eigener Liste (Alle Posteingänge, Regeln, Suche …). Die Anmeldung läuft dabei über
+deinen **Standardbrowser**:
 
 | Anbieter | Weg ohne Einrichtung | Direkte Anmeldung beim Anbieter |
 |----------|----------------------|---------------------------------|
@@ -81,7 +84,11 @@ ausschließlich für `127.0.0.1`.
 
 1. Volle E-Mail-Adresse (z. B. `info@deine-domain.de`) und Postfach-Passwort bereithalten.
    Vergessen? Im [hPanel](https://hpanel.hostinger.com/emails) unter **E-Mails → Konten** neu setzen.
-2. In Lu-Mail: **Konto hinzufügen → Hostinger Mail → Im Browser anmelden**.
+2. In Lu-Mail: **Konto hinzufügen → Hostinger Mail → Im Browser anmelden** und dort Adresse und normales
+   Postfach-Passwort eingeben – kein App-Passwort nötig. Lu-Mail zeigt das Postfach danach selbst an (Liste,
+   Suche, Senden, Kategorien). Die Webseite bleibt als „Stattdessen auf der Webseite anmelden“ wählbar.
+3. Schon als Web-Konto eingerichtet? In dessen Webseiten-Ansicht auf **„Jetzt umstellen“** klicken – das
+   IMAP-Konto ersetzt das Web-Konto (dessen Cookies werden gelöscht).
 
 Server: `imap.hostinger.com:993` und `smtp.hostinger.com:465` (SSL). Gesendete Mails legt Lu-Mail zusätzlich
 im Ordner „Gesendet“ ab, weil Hostinger das beim Versand per SMTP nicht selbst macht.

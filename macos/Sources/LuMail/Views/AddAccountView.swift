@@ -173,7 +173,7 @@ struct AddAccountView: View {
             "Fertig: Dein Postfach mit allen Ordnern erscheint links in Lu-Mail.",
         ].map { GuideStep(text: $0) })
         Spacer(minLength: 0)
-        Button("Erweitert: per IMAP verbinden (App-Passwort/OAuth)") {
+        Button(provider.prefersIMAP ? "Direkt in Lu-Mail verbinden (normales Passwort)" : "Erweitert: per IMAP verbinden (App-Passwort/OAuth)") {
             useIMAP = true
             checkBridge()
         }

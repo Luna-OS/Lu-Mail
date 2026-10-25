@@ -1483,6 +1483,10 @@ public sealed partial class MainPage : Page
             await dialog.ShowAsync();
             if (dialog.AddedAccount is { } account)
             {
+                // Konten neu laden, auch wenn gerade eine Aktualisierung läuft (RefreshAllAsync kehrt dann sofort
+                // zurück) – sonst fehlte das neue Konto und ein ersetztes Web-Konto stünde noch in der Seitenleiste.
+                Vm.LoadAccounts();
+                Vm.RebuildSidebar(force: true);
                 await Vm.RefreshAllAsync();
                 await App.Web.SyncAccountsAsync(Vm.WebAccounts);
                 var inbox = Vm.SidebarAll.FirstOrDefault(i => i.Account?.Id == account.Id && i.Target is SidebarTarget.Category or SidebarTarget.Web);
